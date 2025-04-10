@@ -34,7 +34,15 @@ class GreedyRoute;
 class TSPRoute;
 class MSTRoute;
 class AIPredictionModel;
-struct RouteResults;
+
+// Complete definition of RouteResults struct
+struct RouteResults {
+    vector<int> path;
+    int totalDistance;
+    double totalTime;
+    double totalFuel;
+    double totalWage;
+};
 
 // Exception classes
 class InvalidRouteException : public exception {
@@ -298,6 +306,13 @@ public:
         SetConsoleTextAttribute(hConsole, COLOR_WHITE);
     }
 
+    static void displaySavings(const string& message, double amount) {
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, COLOR_GREEN);
+        cout << "\n" << message << ": " << fixed << setprecision(2) << amount << " RM" << endl;
+        SetConsoleTextAttribute(hConsole, COLOR_WHITE);
+    }
+
     static void clearScreen() {
         system("cls");
     }
@@ -310,6 +325,34 @@ public:
         }
         cout << "] " << progress << "%" << "\r";
         cout.flush();
+    }
+    
+    static void displayCostComparison(const map<string, RouteResults>& routeResults) {
+        cout << "\n===============================================" << endl;
+        cout << "          ROUTE COST COMPARISON                " << endl;
+        cout << "===============================================" << endl;
+        
+        cout << left 
+             << setw(25) << "Route Strategy" 
+             << setw(15) << "Distance (km)" 
+             << setw(15) << "Time (hrs)" 
+             << setw(15) << "Fuel (RM)" 
+             << setw(15) << "Wages (RM)" 
+             << setw(15) << "Total Cost (RM)" << endl;
+             
+        cout << string(100, '-') << endl;
+        
+        for (const auto& route : routeResults) {
+            cout << left
+                 << setw(25) << route.first
+                 << setw(15) << route.second.totalDistance
+                 << setw(15) << fixed << setprecision(2) << route.second.totalTime / 60
+                 << setw(15) << fixed << setprecision(2) << route.second.totalFuel
+                 << setw(15) << fixed << setprecision(2) << route.second.totalWage
+                 << setw(15) << fixed << setprecision(2) << (route.second.totalFuel + route.second.totalWage) << endl;
+        }
+        
+        cout << "===============================================" << endl;
     }
 };
 
@@ -641,13 +684,6 @@ public:
 WasteLocationManager* WasteLocationManager::instance = nullptr;
 
 // Move RouteResults outside of RouteStrategy class to make it accessible to all classes
-struct RouteResults {
-    vector<int> path;
-    int totalDistance;
-    double totalTime;
-    double totalFuel;
-    double totalWage;
-};
 
 // Strategy Pattern for different route algorithms
 class RouteStrategy {
@@ -1269,7 +1305,7 @@ public:
         strategy = newStrategy;
     }
     
-    void executeRoute(WasteLocationManager* manager) {
+    RouteResults executeRoute(WasteLocationManager* manager) {
         if (!strategy) {
             throw InvalidRouteException("No route strategy has been set");
         }
@@ -1292,6 +1328,8 @@ public:
         
         // Save route information to file
         strategy->saveRouteToFile("route_info.txt", results, manager, getStrategyName());
+        
+        return results;
     }
     
     string getStrategyName() const {
@@ -1358,8 +1396,9 @@ private:
         cout << "4. Execute Selected Route" << endl;
         cout << "5. Save Locations Info to File" << endl;
         cout << "6. View AI Predictions" << endl;
-        cout << "7. Help" << endl;
-        cout << "8. Exit" << endl;
+        cout << "7. Compare Route Costs" << endl;
+        cout << "8. Help" << endl;
+        cout << "9. Exit" << endl;
         cout << "\nCurrent Route Algorithm: " << getCurrentRouteAlgorithm() << endl;
         cout << "\nEnter your choice: ";
     }
@@ -1519,6 +1558,56 @@ private:
         return (response == 'y' || response == 'Y');
     }
 
+    // Add this to the private section of WasteManagementSystem class
+private:
+    // Add storage for route results
+    map<string, RouteResults> routeResults;
+    
+    // Add method to compare routes
+    void compareRoutes() {
+        system("cls");
+        displayHeader();
+        
+        if (routeResults.size() < 2) {
+            cout << "\nYou need to execute at least 2 different routes to compare them." << endl;
+            cout << "\nPress any key to return to main menu...";
+            _getch();
+            return;
+        }
+        
+        UIHelper::displayCostComparison(routeResults);
+        
+        // Find the cheapest route
+        string cheapestRoute = "";
+        double cheapestCost = 1000000.0;
+        
+        for (const auto& route : routeResults) {
+            double totalCost = route.second.totalFuel + route.second.totalWage;
+            if (totalCost < cheapestCost) {
+                cheapestCost = totalCost;
+                cheapestRoute = route.first;
+            }
+        }
+        
+        cout << "\nCost Savings Analysis:" << endl;
+        cout << "--------------------" << endl;
+        cout << "Most cost-effective route: " << cheapestRoute << endl;
+        
+        for (const auto& route : routeResults) {
+            if (route.first != cheapestRoute) {
+                double routeCost = route.second.totalFuel + route.second.totalWage;
+                double savings = routeCost - cheapestCost;
+                double savingsPercent = (savings / routeCost) * 100;
+                
+                UIHelper::displaySavings("Switching from " + route.first + " to " + cheapestRoute + " saves", savings);
+                cout << "(" << fixed << setprecision(2) << savingsPercent << "% reduction)" << endl;
+            }
+        }
+        
+        cout << "\nPress any key to return to main menu...";
+        _getch();
+    }
+
 public:
     WasteManagementSystem() : currentRoute(0) {
         locationManager = WasteLocationManager::getInstance();
@@ -1566,7 +1655,9 @@ public:
                         cout << "Please select a route algorithm first." << endl;
                     } else {
                         try {
-                            route.executeRoute(locationManager);
+                            RouteResults results = route.executeRoute(locationManager);
+                            // Store the results for comparison
+                            routeResults[getCurrentRouteAlgorithm()] = results;
                         } catch (const InvalidRouteException& e) {
                             cout << "Error: " << e.what() << endl;
                         }
@@ -1585,10 +1676,14 @@ public:
                     break;
                     
                 case 7:
+                    compareRoutes();
+                    break;
+                    
+                case 8:
                     showHelp();
                     break;
 
-                case 8:
+                case 9:
                     if (confirmAction("Are you sure you want to exit?")) {
                         running = false;
                     }
