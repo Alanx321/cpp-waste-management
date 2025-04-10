@@ -34,7 +34,15 @@ class GreedyRoute;
 class TSPRoute;
 class MSTRoute;
 class AIPredictionModel;
-struct RouteResults;
+
+// Complete definition of RouteResults struct
+struct RouteResults {
+    vector<int> path;
+    int totalDistance;
+    double totalTime;
+    double totalFuel;
+    double totalWage;
+};
 
 // Exception classes
 class InvalidRouteException : public exception {
@@ -298,6 +306,13 @@ public:
         SetConsoleTextAttribute(hConsole, COLOR_WHITE);
     }
 
+    static void displaySavings(const string& message, double amount) {
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, COLOR_GREEN);
+        cout << "\n" << message << ": " << fixed << setprecision(2) << amount << " RM" << endl;
+        SetConsoleTextAttribute(hConsole, COLOR_WHITE);
+    }
+
     static void clearScreen() {
         system("cls");
     }
@@ -310,6 +325,34 @@ public:
         }
         cout << "] " << progress << "%" << "\r";
         cout.flush();
+    }
+    
+    static void displayCostComparison(const map<string, RouteResults>& routeResults) {
+        cout << "\n===============================================" << endl;
+        cout << "          ROUTE COST COMPARISON                " << endl;
+        cout << "===============================================" << endl;
+        
+        cout << left 
+             << setw(25) << "Route Strategy" 
+             << setw(15) << "Distance (km)" 
+             << setw(15) << "Time (hrs)" 
+             << setw(15) << "Fuel (RM)" 
+             << setw(15) << "Wages (RM)" 
+             << setw(15) << "Total Cost (RM)" << endl;
+             
+        cout << string(100, '-') << endl;
+        
+        for (const auto& route : routeResults) {
+            cout << left
+                 << setw(25) << route.first
+                 << setw(15) << route.second.totalDistance
+                 << setw(15) << fixed << setprecision(2) << route.second.totalTime / 60
+                 << setw(15) << fixed << setprecision(2) << route.second.totalFuel
+                 << setw(15) << fixed << setprecision(2) << route.second.totalWage
+                 << setw(15) << fixed << setprecision(2) << (route.second.totalFuel + route.second.totalWage) << endl;
+        }
+        
+        cout << "===============================================" << endl;
     }
 };
 
@@ -641,13 +684,6 @@ public:
 WasteLocationManager* WasteLocationManager::instance = nullptr;
 
 // Move RouteResults outside of RouteStrategy class to make it accessible to all classes
-struct RouteResults {
-    vector<int> path;
-    int totalDistance;
-    double totalTime;
-    double totalFuel;
-    double totalWage;
-};
 
 // Strategy Pattern for different route algorithms
 class RouteStrategy {
@@ -1269,7 +1305,7 @@ public:
         strategy = newStrategy;
     }
     
-    void executeRoute(WasteLocationManager* manager) {
+    RouteResults executeRoute(WasteLocationManager* manager) {
         if (!strategy) {
             throw InvalidRouteException("No route strategy has been set");
         }
@@ -1292,6 +1328,8 @@ public:
         
         // Save route information to file
         strategy->saveRouteToFile("route_info.txt", results, manager, getStrategyName());
+        
+        return results;
     }
     
     string getStrategyName() const {
@@ -1358,8 +1396,9 @@ private:
         cout << "4. Execute Selected Route" << endl;
         cout << "5. Save Locations Info to File" << endl;
         cout << "6. View AI Predictions" << endl;
-        cout << "7. Help" << endl;
-        cout << "8. Exit" << endl;
+        cout << "7. Compare Route Costs" << endl;
+        cout << "8. Help" << endl;
+        cout << "9. Exit" << endl;
         cout << "\nCurrent Route Algorithm: " << getCurrentRouteAlgorithm() << endl;
         cout << "\nEnter your choice: ";
     }
@@ -1497,16 +1536,74 @@ private:
         system("cls");
         displayHeader();
         
-        cout << "HELP DOCUMENTATION" << endl;
-        cout << "==================" << endl << endl;
+        setTextColor(COLOR_BLUE);
+        cout << "\n==============================================" << endl;
+        cout << "          HELP DOCUMENTATION                  " << endl;
+        cout << "==============================================" << endl;
+        setTextColor(COLOR_WHITE);
         
-        cout << "1. Generate Random Waste Levels:" << endl;
-        cout << "   Generates random waste levels for all locations to simulate real-world data." << endl << endl;
+        cout << "\n1. Generate Random Waste Levels:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Simulates real-world data by generating random waste levels (0-100%)" << endl;
+        cout << "   for all collection locations. Use this to test different scenarios." << endl;
+        setTextColor(COLOR_WHITE);
         
-        cout << "2. View Waste Locations Information:" << endl;
-        cout << "   Displays all waste collection locations with their current waste levels." << endl << endl;
+        cout << "\n2. View Waste Locations Information:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Displays all waste collection locations with their current waste levels," << endl;
+        cout << "   AI predictions for the next 24 hours, and trend analysis." << endl;
+        cout << "   - Green: Low waste levels (<40%)" << endl;
+        cout << "   - Yellow: Medium waste levels (40-69%)" << endl;
+        cout << "   - Red: High waste levels (70%+)" << endl;
+        setTextColor(COLOR_WHITE);
         
-        // ... more help text for each feature
+        cout << "\n3. Select Route Algorithm:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Choose from 5 different routing algorithms:" << endl;
+        cout << "   - Regular: Visits locations with waste level ≥40% within 30km" << endl;
+        cout << "   - Optimized: Visits locations with waste level ≥60% within 20km" << endl;
+        cout << "   - Greedy: Visits locations with waste level ≥30%, always choosing" << endl;
+        cout << "     the nearest location next" << endl;
+        cout << "   - TSP: Visits locations with waste level ≥25% using the Traveling" << endl;
+        cout << "     Salesman Problem algorithm to find the shortest path" << endl;
+        cout << "   - MST: Visits locations with waste level ≥35% using a Minimum" << endl;
+        cout << "     Spanning Tree to find an efficient route" << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n4. Execute Selected Route:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Calculates and displays the optimized collection route using the" << endl;
+        cout << "   selected algorithm. Shows distance, time, fuel cost, and wage cost." << endl;
+        cout << "   The route information is also saved to 'route_info.txt'." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n5. Save Locations Info to File:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Exports the current waste location data to 'locations_info.txt'," << endl;
+        cout << "   including waste levels, predictions, and distances." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n6. View AI Predictions:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Shows AI-powered predictions for waste levels over the next 72 hours." << endl;
+        cout << "   Includes trend analysis and anomaly detection." << endl;
+        cout << "   You can also simulate trending waste data for demonstrations." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n7. Compare Route Costs:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Compares the costs of different routing algorithms side by side," << endl;
+        cout << "   showing potential savings by switching to the most cost-effective route." << endl;
+        cout << "   You need to execute at least 2 different routes to use this feature." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        setTextColor(COLOR_GREEN);
+        cout << "\n=== ADDITIONAL INFORMATION ===" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "- Cost calculations include both fuel (RM 2.50/km) and driver wages (RM 10.00/hour)" << endl;
+        cout << "- Anomalies are detected when waste levels deviate significantly from historical trends" << endl;
+        cout << "- All routes begin and end at the Waste Collector HQ" << endl;
+        setTextColor(COLOR_WHITE);
         
         cout << "\nPress any key to return to the main menu...";
         _getch();
@@ -1517,6 +1614,56 @@ private:
         char response;
         cin >> response;
         return (response == 'y' || response == 'Y');
+    }
+
+    // Add this to the private section of WasteManagementSystem class
+private:
+    // Add storage for route results
+    map<string, RouteResults> routeResults;
+    
+    // Add method to compare routes
+    void compareRoutes() {
+        system("cls");
+        displayHeader();
+        
+        if (routeResults.size() < 2) {
+            cout << "\nYou need to execute at least 2 different routes to compare them." << endl;
+            cout << "\nPress any key to return to main menu...";
+            _getch();
+            return;
+        }
+        
+        UIHelper::displayCostComparison(routeResults);
+        
+        // Find the cheapest route
+        string cheapestRoute = "";
+        double cheapestCost = 1000000.0;
+        
+        for (const auto& route : routeResults) {
+            double totalCost = route.second.totalFuel + route.second.totalWage;
+            if (totalCost < cheapestCost) {
+                cheapestCost = totalCost;
+                cheapestRoute = route.first;
+            }
+        }
+        
+        cout << "\nCost Savings Analysis:" << endl;
+        cout << "--------------------" << endl;
+        cout << "Most cost-effective route: " << cheapestRoute << endl;
+        
+        for (const auto& route : routeResults) {
+            if (route.first != cheapestRoute) {
+                double routeCost = route.second.totalFuel + route.second.totalWage;
+                double savings = routeCost - cheapestCost;
+                double savingsPercent = (savings / routeCost) * 100;
+                
+                UIHelper::displaySavings("Switching from " + route.first + " to " + cheapestRoute + " saves", savings);
+                cout << "(" << fixed << setprecision(2) << savingsPercent << "% reduction)" << endl;
+            }
+        }
+        
+        cout << "\nPress any key to return to main menu...";
+        _getch();
     }
 
 public:
@@ -1566,7 +1713,9 @@ public:
                         cout << "Please select a route algorithm first." << endl;
                     } else {
                         try {
-                            route.executeRoute(locationManager);
+                            RouteResults results = route.executeRoute(locationManager);
+                            // Store the results for comparison
+                            routeResults[getCurrentRouteAlgorithm()] = results;
                         } catch (const InvalidRouteException& e) {
                             cout << "Error: " << e.what() << endl;
                         }
@@ -1585,10 +1734,14 @@ public:
                     break;
                     
                 case 7:
+                    compareRoutes();
+                    break;
+                    
+                case 8:
                     showHelp();
                     break;
 
-                case 8:
+                case 9:
                     if (confirmAction("Are you sure you want to exit?")) {
                         running = false;
                     }
