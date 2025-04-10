@@ -1536,16 +1536,74 @@ private:
         system("cls");
         displayHeader();
         
-        cout << "HELP DOCUMENTATION" << endl;
-        cout << "==================" << endl << endl;
+        setTextColor(COLOR_BLUE);
+        cout << "\n==============================================" << endl;
+        cout << "          HELP DOCUMENTATION                  " << endl;
+        cout << "==============================================" << endl;
+        setTextColor(COLOR_WHITE);
         
-        cout << "1. Generate Random Waste Levels:" << endl;
-        cout << "   Generates random waste levels for all locations to simulate real-world data." << endl << endl;
+        cout << "\n1. Generate Random Waste Levels:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Simulates real-world data by generating random waste levels (0-100%)" << endl;
+        cout << "   for all collection locations. Use this to test different scenarios." << endl;
+        setTextColor(COLOR_WHITE);
         
-        cout << "2. View Waste Locations Information:" << endl;
-        cout << "   Displays all waste collection locations with their current waste levels." << endl << endl;
+        cout << "\n2. View Waste Locations Information:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Displays all waste collection locations with their current waste levels," << endl;
+        cout << "   AI predictions for the next 24 hours, and trend analysis." << endl;
+        cout << "   - Green: Low waste levels (<40%)" << endl;
+        cout << "   - Yellow: Medium waste levels (40-69%)" << endl;
+        cout << "   - Red: High waste levels (70%+)" << endl;
+        setTextColor(COLOR_WHITE);
         
-        // ... more help text for each feature
+        cout << "\n3. Select Route Algorithm:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Choose from 5 different routing algorithms:" << endl;
+        cout << "   - Regular: Visits locations with waste level ≥40% within 30km" << endl;
+        cout << "   - Optimized: Visits locations with waste level ≥60% within 20km" << endl;
+        cout << "   - Greedy: Visits locations with waste level ≥30%, always choosing" << endl;
+        cout << "     the nearest location next" << endl;
+        cout << "   - TSP: Visits locations with waste level ≥25% using the Traveling" << endl;
+        cout << "     Salesman Problem algorithm to find the shortest path" << endl;
+        cout << "   - MST: Visits locations with waste level ≥35% using a Minimum" << endl;
+        cout << "     Spanning Tree to find an efficient route" << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n4. Execute Selected Route:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Calculates and displays the optimized collection route using the" << endl;
+        cout << "   selected algorithm. Shows distance, time, fuel cost, and wage cost." << endl;
+        cout << "   The route information is also saved to 'route_info.txt'." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n5. Save Locations Info to File:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Exports the current waste location data to 'locations_info.txt'," << endl;
+        cout << "   including waste levels, predictions, and distances." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n6. View AI Predictions:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Shows AI-powered predictions for waste levels over the next 72 hours." << endl;
+        cout << "   Includes trend analysis and anomaly detection." << endl;
+        cout << "   You can also simulate trending waste data for demonstrations." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n7. Compare Route Costs:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Compares the costs of different routing algorithms side by side," << endl;
+        cout << "   showing potential savings by switching to the most cost-effective route." << endl;
+        cout << "   You need to execute at least 2 different routes to use this feature." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        setTextColor(COLOR_GREEN);
+        cout << "\n=== ADDITIONAL INFORMATION ===" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "- Cost calculations include both fuel (RM 2.50/km) and driver wages (RM 10.00/hour)" << endl;
+        cout << "- Anomalies are detected when waste levels deviate significantly from historical trends" << endl;
+        cout << "- All routes begin and end at the Waste Collector HQ" << endl;
+        setTextColor(COLOR_WHITE);
         
         cout << "\nPress any key to return to the main menu...";
         _getch();
