@@ -34,7 +34,16 @@ class GreedyRoute;
 class TSPRoute;
 class MSTRoute;
 class AIPredictionModel;
-struct RouteResults;
+class WasteLocationManager;
+
+// Complete definition of RouteResults struct
+struct RouteResults {
+    vector<int> path;
+    int totalDistance;
+    double totalTime;
+    double totalFuel;
+    double totalWage;
+};
 
 // Exception classes
 class InvalidRouteException : public exception {
@@ -106,15 +115,6 @@ public:
     
     const vector<pair<int, double>>& getHistoricalData() const {
         return previousWasteLevels;
-    }
-
-    void addHistoricalDataPoint(time_t timestamp, int level) {
-        previousWasteLevels.push_back(make_pair(timestamp, level));
-        
-        // Keep only last 30 data points
-        if (previousWasteLevels.size() > 30) {
-            previousWasteLevels.erase(previousWasteLevels.begin());
-        }
     }
 
     void addHistoricalDataPoint(time_t timestamp, double level) {
@@ -298,6 +298,13 @@ public:
         SetConsoleTextAttribute(hConsole, COLOR_WHITE);
     }
 
+    static void displaySavings(const string& message, double amount) {
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, COLOR_GREEN);
+        cout << "\n" << message << ": " << fixed << setprecision(2) << amount << " RM" << endl;
+        SetConsoleTextAttribute(hConsole, COLOR_WHITE);
+    }
+
     static void clearScreen() {
         system("cls");
     }
@@ -310,6 +317,34 @@ public:
         }
         cout << "] " << progress << "%" << "\r";
         cout.flush();
+    }
+    
+    static void displayCostComparison(const map<string, RouteResults>& routeResults) {
+        cout << "\n===============================================" << endl;
+        cout << "          ROUTE COST COMPARISON                " << endl;
+        cout << "===============================================" << endl;
+        
+        cout << left 
+             << setw(35) << "Route Strategy" 
+             << setw(15) << "Distance (km)" 
+             << setw(15) << "Time (hrs)" 
+             << setw(15) << "Fuel (RM)" 
+             << setw(15) << "Wages (RM)" 
+             << setw(15) << "Total Cost (RM)" << endl;
+             
+        cout << string(100, '-') << endl;
+        
+        for (const auto& route : routeResults) {
+            cout << left
+                 << setw(35) << route.first
+                 << setw(15) << route.second.totalDistance
+                 << setw(15) << fixed << setprecision(2) << route.second.totalTime / 60
+                 << setw(15) << fixed << setprecision(2) << route.second.totalFuel
+                 << setw(15) << fixed << setprecision(2) << route.second.totalWage
+                 << setw(15) << fixed << setprecision(2) << (route.second.totalFuel + route.second.totalWage) << endl;
+        }
+        
+        cout << "===============================================" << endl;
     }
 };
 
@@ -641,13 +676,6 @@ public:
 WasteLocationManager* WasteLocationManager::instance = nullptr;
 
 // Move RouteResults outside of RouteStrategy class to make it accessible to all classes
-struct RouteResults {
-    vector<int> path;
-    int totalDistance;
-    double totalTime;
-    double totalFuel;
-    double totalWage;
-};
 
 // Strategy Pattern for different route algorithms
 class RouteStrategy {
@@ -1269,7 +1297,7 @@ public:
         strategy = newStrategy;
     }
     
-    void executeRoute(WasteLocationManager* manager) {
+    RouteResults executeRoute(WasteLocationManager* manager) {
         if (!strategy) {
             throw InvalidRouteException("No route strategy has been set");
         }
@@ -1292,6 +1320,8 @@ public:
         
         // Save route information to file
         strategy->saveRouteToFile("route_info.txt", results, manager, getStrategyName());
+        
+        return results;
     }
     
     string getStrategyName() const {
@@ -1358,8 +1388,10 @@ private:
         cout << "4. Execute Selected Route" << endl;
         cout << "5. Save Locations Info to File" << endl;
         cout << "6. View AI Predictions" << endl;
-        cout << "7. Help" << endl;
-        cout << "8. Exit" << endl;
+        cout << "7. Compare Route Costs" << endl;
+        cout << "8. Waste Pattern Analytics Dashboard" << endl;
+        cout << "9. Help" << endl;
+        cout << "0. Exit" << endl;
         cout << "\nCurrent Route Algorithm: " << getCurrentRouteAlgorithm() << endl;
         cout << "\nEnter your choice: ";
     }
@@ -1497,16 +1529,87 @@ private:
         system("cls");
         displayHeader();
         
-        cout << "HELP DOCUMENTATION" << endl;
-        cout << "==================" << endl << endl;
+        setTextColor(COLOR_BLUE);
+        cout << "\n==============================================" << endl;
+        cout << "          HELP DOCUMENTATION                  " << endl;
+        cout << "==============================================" << endl;
+        setTextColor(COLOR_WHITE);
         
-        cout << "1. Generate Random Waste Levels:" << endl;
-        cout << "   Generates random waste levels for all locations to simulate real-world data." << endl << endl;
+        cout << "\n1. Generate Random Waste Levels:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Simulates real-world data by generating random waste levels (0-100%)" << endl;
+        cout << "   for all collection locations. Use this to test different scenarios." << endl;
+        setTextColor(COLOR_WHITE);
         
-        cout << "2. View Waste Locations Information:" << endl;
-        cout << "   Displays all waste collection locations with their current waste levels." << endl << endl;
+        cout << "\n2. View Waste Locations Information:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Displays all waste collection locations with their current waste levels," << endl;
+        cout << "   AI predictions for the next 24 hours, and trend analysis." << endl;
+        cout << "   - Green: Low waste levels (<40%)" << endl;
+        cout << "   - Yellow: Medium waste levels (40-69%)" << endl;
+        cout << "   - Red: High waste levels (70%+)" << endl;
+        setTextColor(COLOR_WHITE);
         
-        // ... more help text for each feature
+        cout << "\n3. Select Route Algorithm:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Choose from 5 different routing algorithms:" << endl;
+        cout << "   - Regular: Visits locations with waste level ≥40% within 30km" << endl;
+        cout << "   - Optimized: Visits locations with waste level ≥60% within 20km" << endl;
+        cout << "   - Greedy: Visits locations with waste level ≥30%, always choosing" << endl;
+        cout << "     the nearest location next" << endl;
+        cout << "   - TSP: Visits locations with waste level ≥25% using the Traveling" << endl;
+        cout << "     Salesman Problem algorithm to find the shortest path" << endl;
+        cout << "   - MST: Visits locations with waste level ≥35% using a Minimum" << endl;
+        cout << "     Spanning Tree to find an efficient route" << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n4. Execute Selected Route:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Calculates and displays the optimized collection route using the" << endl;
+        cout << "   selected algorithm. Shows distance, time, fuel cost, and wage cost." << endl;
+        cout << "   The route information is also saved to 'route_info.txt'." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n5. Save Locations Info to File:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Exports the current waste location data to 'locations_info.txt'," << endl;
+        cout << "   including waste levels, predictions, and distances." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n6. View AI Predictions:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Shows AI-powered predictions for waste levels over the next 72 hours." << endl;
+        cout << "   Includes trend analysis and anomaly detection." << endl;
+        cout << "   You can also simulate trending waste data for demonstrations." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n7. Compare Route Costs:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Compares the costs of different routing algorithms side by side," << endl;
+        cout << "   showing potential savings by switching to the most cost-effective route." << endl;
+        cout << "   You need to execute at least 2 different routes to use this feature." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n8. Waste Pattern Analytics Dashboard:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Comprehensive dashboard that analyzes historical waste data," << endl;
+        cout << "   identifies patterns, and provides actionable insights including:" << endl;
+        cout << "   - Days until bins reach capacity" << endl;
+        cout << "   - Waste pattern classification" << endl;
+        cout << "   - Trend visualization" << endl;
+        cout << "   - Prioritized recommendations" << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n9. Help: Display this help information" << endl;
+        cout << "\n0. Exit: Close the application" << endl;
+        
+        setTextColor(COLOR_GREEN);
+        cout << "\n=== ADDITIONAL INFORMATION ===" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "- Cost calculations include both fuel (RM 2.50/km) and driver wages (RM 10.00/hour)" << endl;
+        cout << "- Anomalies are detected when waste levels deviate significantly from historical trends" << endl;
+        cout << "- All routes begin and end at the Waste Collector HQ" << endl;
+        setTextColor(COLOR_WHITE);
         
         cout << "\nPress any key to return to the main menu...";
         _getch();
@@ -1517,6 +1620,323 @@ private:
         char response;
         cin >> response;
         return (response == 'y' || response == 'Y');
+    }
+
+    // Add this to the private section of WasteManagementSystem class
+private:
+    // Add storage for route results
+    map<string, RouteResults> routeResults;
+    
+    // Add method to compare routes
+    void compareRoutes() {
+        system("cls");
+        displayHeader();
+        
+        if (routeResults.size() < 2) {
+            cout << "\nYou need to execute at least 2 different routes to compare them." << endl;
+            cout << "\nPress any key to return to main menu...";
+            _getch();
+            return;
+        }
+        
+        UIHelper::displayCostComparison(routeResults);
+        
+        // Find the cheapest route
+        string cheapestRoute = "";
+        double cheapestCost = 1000000.0;
+        
+        for (const auto& route : routeResults) {
+            double totalCost = route.second.totalFuel + route.second.totalWage;
+            if (totalCost < cheapestCost) {
+                cheapestCost = totalCost;
+                cheapestRoute = route.first;
+            }
+        }
+        
+        cout << "\nCost Savings Analysis:" << endl;
+        cout << "--------------------" << endl;
+        cout << "Most cost-effective route: " << cheapestRoute << endl;
+        
+        for (const auto& route : routeResults) {
+            if (route.first != cheapestRoute) {
+                double routeCost = route.second.totalFuel + route.second.totalWage;
+                double savings = routeCost - cheapestCost;
+                double savingsPercent = (savings / routeCost) * 100;
+                
+                UIHelper::displaySavings("Switching from " + route.first + " to " + cheapestRoute + " saves", savings);
+                cout << "(" << fixed << setprecision(2) << savingsPercent << "% reduction)" << endl;
+            }
+        }
+        
+        cout << "\nPress any key to return to main menu...";
+        _getch();
+    }
+
+    void displayAnalyticsDashboard() {
+        system("cls");
+        displayHeader();
+        
+        const vector<WasteLocation>& locations = locationManager->getLocations();
+        AIPredictionModel& aiModel = locationManager->getAIModel();
+        
+        setTextColor(COLOR_BLUE);
+        cout << "\n=================================================================" << endl;
+        cout << "               WASTE PATTERN ANALYTICS DASHBOARD                  " << endl;
+        cout << "=================================================================" << endl;
+        setTextColor(COLOR_WHITE);
+        
+        // Calculate overall waste statistics
+        double totalWaste = 0;
+        double avgWaste = 0;
+        int highPriorityLocations = 0;
+        int anomalies = 0;
+        
+        for (size_t i = 1; i < locations.size(); i++) {
+            totalWaste += locations[i].getWasteLevel();
+            if (locations[i].getWasteLevel() >= 70) highPriorityLocations++;
+            if (aiModel.isAnomaly(locations[i])) anomalies++;
+        }
+        
+        avgWaste = totalWaste / (locations.size() - 1);  // Skip HQ
+        
+        // Display summary section
+        cout << "\n----- SUMMARY STATISTICS -----" << endl;
+        cout << left << setw(35) << "Average Waste Level:" 
+             << fixed << setprecision(2) << avgWaste << "%" << endl;
+        cout << left << setw(35) << "High Priority Locations:" << highPriorityLocations << endl;
+        cout << left << setw(35) << "Detected Anomalies:" << anomalies << endl;
+        
+        // Display waste pattern analysis table
+        cout << "\n----- WASTE PATTERN ANALYSIS -----" << endl;
+        cout << left 
+             << setw(25) << "Location" 
+             << setw(15) << "Current %" 
+             << setw(15) << "Trend" 
+             << setw(20) << "Days to Capacity" 
+             << setw(20) << "Pattern Type" << endl;
+        cout << string(95, '-') << endl;
+        
+        for (size_t i = 1; i < locations.size(); i++) {
+            int current = locations[i].getWasteLevel();
+            string trend = aiModel.getWasteTrend(locations[i]);
+            
+            // Calculate days until capacity
+            int daysToCapacity = calculateDaysToCapacity(locations[i], aiModel);
+            
+            // Determine pattern type based on historical data
+            string patternType = determinePatternType(locations[i], aiModel);
+            
+            // Highlight based on priority
+            if (current >= 70) setTextColor(COLOR_RED);
+            else if (current >= 40) setTextColor(COLOR_YELLOW);
+            else setTextColor(COLOR_GREEN);
+            
+            cout << left << setw(25) << locations[i].getName()
+                 << setw(15) << (to_string(current) + " %")
+                 << setw(15) << trend;
+                 
+            // Display days to capacity with conditional formatting
+            if (daysToCapacity <= 2) {
+                setTextColor(COLOR_RED);
+                cout << setw(20) << daysToCapacity;
+                if (current >= 40) setTextColor(COLOR_YELLOW);
+                else setTextColor(COLOR_GREEN);
+            } else {
+                cout << setw(20) << daysToCapacity;
+            }
+            
+            // Anomaly-based pattern 
+            if (aiModel.isAnomaly(locations[i])) {
+                setTextColor(COLOR_RED);
+                cout << setw(20) << patternType + " [ANOMALY]" << endl;
+            } else {
+                cout << setw(20) << patternType << endl;
+            }
+            
+            setTextColor(COLOR_WHITE);
+        }
+        
+        // Display waste trend visualization
+        cout << "\n----- WASTE TREND VISUALIZATION -----" << endl;
+        visualizeWasteTrends(locations, aiModel);
+        
+        // Display insights and recommendations
+        cout << "\n----- INSIGHTS & RECOMMENDATIONS -----" << endl;
+        generateInsights(locations, aiModel);
+        
+        cout << "\nPress any key to return to the main menu...";
+        _getch();
+    }
+    
+    // Helper methods for analytics dashboard
+    int calculateDaysToCapacity(const WasteLocation& location, const AIPredictionModel& aiModel) {
+        int currentLevel = location.getWasteLevel();
+        if (currentLevel >= 95) return 0;  // Already at capacity
+        
+        string trend = aiModel.getWasteTrend(location);
+        
+        // Extract trend information to calculate daily increase rate
+        double dailyRate = 0;
+        
+        if (trend == "Rapidly increasing") dailyRate = 10.0;
+        else if (trend == "Increasing") dailyRate = 5.0;
+        else if (trend == "Stable") dailyRate = 2.0;
+        else if (trend == "Decreasing") dailyRate = -2.0;
+        else if (trend == "Rapidly decreasing") dailyRate = -5.0;
+        else dailyRate = 2.0;  // Default
+        
+        // If rate is negative or zero, waste won't reach capacity
+        if (dailyRate <= 0) return 99;  
+        
+        // Calculate days to reach 95% capacity
+        int daysToCapacity = ceil((95 - currentLevel) / dailyRate);
+        return max(0, daysToCapacity);
+    }
+    
+    string determinePatternType(const WasteLocation& location, const AIPredictionModel& aiModel) {
+        string trend = aiModel.getWasteTrend(location);
+        const vector<pair<int, double>>& historicalData = location.getHistoricalData();
+        
+        if (historicalData.size() < 5) {
+            return "Insufficient Data";
+        }
+        
+        // Calculate variability as a simple indicator of pattern type
+        double sum = 0;
+        double mean = 0;
+        double variance = 0;
+        
+        for (const auto& data : historicalData) {
+            sum += data.second;
+        }
+        mean = sum / historicalData.size();
+        
+        for (const auto& data : historicalData) {
+            variance += pow(data.second - mean, 2);
+        }
+        variance /= historicalData.size();
+        double stdDev = sqrt(variance);
+        
+        if (stdDev < 5.0) {
+            if (trend == "Stable") return "Consistent";
+            return "Steady " + trend;
+        } else if (stdDev < 15.0) {
+            return "Moderate Variability";
+        } else {
+            return "Highly Variable";
+        }
+    }
+    
+    void visualizeWasteTrends(const vector<WasteLocation>& locations, const AIPredictionModel& aiModel) {
+        // Find top 3 locations with fastest growth
+        vector<pair<string, string>> topGrowth;
+        
+        for (size_t i = 1; i < locations.size(); i++) {
+            string trend = aiModel.getWasteTrend(locations[i]);
+            if (trend == "Rapidly increasing" || trend == "Increasing") {
+                topGrowth.push_back({locations[i].getName(), trend});
+                if (topGrowth.size() >= 3) break;
+            }
+        }
+        
+        // Display visualization
+        cout << "Top Waste Growth Locations:" << endl;
+        
+        if (topGrowth.empty()) {
+            cout << "   No significant growth trends detected" << endl;
+        } else {
+            for (const auto& loc : topGrowth) {
+                cout << "   " << loc.first << " - " << loc.second << endl;
+                
+                // Simple ASCII chart showing predicted growth
+                int currentLevel = 0;
+                for (size_t i = 1; i < locations.size(); i++) {
+                    if (locations[i].getName() == loc.first) {
+                        currentLevel = locations[i].getWasteLevel();
+                        break;
+                    }
+                }
+                
+                cout << "   Current: [";
+                int barLength = currentLevel / 5;  // 20 chars = 100%
+                for (int j = 0; j < 20; j++) {
+                    if (j < barLength) cout << "█";
+                    else cout << " ";
+                }
+                cout << "] " << currentLevel << "%" << endl;
+                
+                // Show 3-day prediction
+                cout << "   3-Day:   [";
+                for (size_t i = 1; i < locations.size(); i++) {
+                    if (locations[i].getName() == loc.first) {
+                        int predictedLevel = aiModel.predictWasteLevel(locations[i], 3);
+                        barLength = predictedLevel / 5;
+                        for (int j = 0; j < 20; j++) {
+                            if (j < barLength) {
+                                if (j < currentLevel / 5) cout << "█";
+                                else cout << "▓";  // New growth
+                            } else cout << " ";
+                        }
+                        cout << "] " << predictedLevel << "%" << endl;
+                        break;
+                    }
+                }
+                cout << endl;
+            }
+        }
+    }
+    
+    void generateInsights(const vector<WasteLocation>& locations, const AIPredictionModel& aiModel) {
+        // Count locations by priority
+        int highPriority = 0;
+        int mediumPriority = 0;
+        int lowPriority = 0;
+        vector<string> anomalyLocations;
+        
+        for (size_t i = 1; i < locations.size(); i++) {
+            int level = locations[i].getWasteLevel();
+            if (level >= 70) highPriority++;
+            else if (level >= 40) mediumPriority++;
+            else lowPriority++;
+            
+            if (aiModel.isAnomaly(locations[i])) {
+                anomalyLocations.push_back(locations[i].getName());
+            }
+        }
+        
+        // Generate insights based on data
+        if (highPriority > 0) {
+            setTextColor(COLOR_RED);
+            cout << "• URGENT: " << highPriority << " location(s) require immediate attention" << endl;
+            setTextColor(COLOR_WHITE);
+        }
+        
+        if (mediumPriority > 0) {
+            setTextColor(COLOR_YELLOW);
+            cout << "• " << mediumPriority << " location(s) should be scheduled within the next 48 hours" << endl;
+            setTextColor(COLOR_WHITE);
+        }
+        
+        if (!anomalyLocations.empty()) {
+            setTextColor(COLOR_RED);
+            cout << "• Anomalies detected at: ";
+            for (size_t i = 0; i < anomalyLocations.size(); i++) {
+                cout << anomalyLocations[i];
+                if (i < anomalyLocations.size() - 1) cout << ", ";
+            }
+            cout << endl << "  Recommend investigation of sudden waste level changes" << endl;
+            setTextColor(COLOR_WHITE);
+        }
+        
+        // Overall waste management recommendations
+        cout << "• Recommendation: ";
+        if (highPriority > 2) {
+            cout << "Increase collection frequency for high-priority areas" << endl;
+        } else if (mediumPriority > locations.size() / 2) {
+            cout << "Consider optimizing routes to handle increasing waste levels" << endl;
+        } else {
+            cout << "Current collection schedule is adequate for waste volumes" << endl;
+        }
     }
 
 public:
@@ -1566,7 +1986,9 @@ public:
                         cout << "Please select a route algorithm first." << endl;
                     } else {
                         try {
-                            route.executeRoute(locationManager);
+                            RouteResults results = route.executeRoute(locationManager);
+                            // Store the results for comparison
+                            routeResults[getCurrentRouteAlgorithm()] = results;
                         } catch (const InvalidRouteException& e) {
                             cout << "Error: " << e.what() << endl;
                         }
@@ -1585,10 +2007,18 @@ public:
                     break;
                     
                 case 7:
+                    compareRoutes();
+                    break;
+                    
+                case 8:
+                    displayAnalyticsDashboard();
+                    break;
+
+                case 9:
                     showHelp();
                     break;
 
-                case 8:
+                case 0:
                     if (confirmAction("Are you sure you want to exit?")) {
                         running = false;
                     }
@@ -1600,11 +2030,6 @@ public:
                     break;
             }
         }
-    }
-
-    void setTextColor(int colorCode) {
-        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleTextAttribute(hConsole, colorCode);
     }
 };
 
