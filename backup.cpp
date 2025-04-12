@@ -116,15 +116,6 @@ public:
         return previousWasteLevels;
     }
 
-    void addHistoricalDataPoint(time_t timestamp, int level) {
-        previousWasteLevels.push_back(make_pair(timestamp, level));
-        
-        // Keep only last 30 data points
-        if (previousWasteLevels.size() > 30) {
-            previousWasteLevels.erase(previousWasteLevels.begin());
-        }
-    }
-
     void addHistoricalDataPoint(time_t timestamp, double level) {
         previousWasteLevels.push_back(make_pair(timestamp, level));
         
@@ -333,7 +324,7 @@ public:
         cout << "===============================================" << endl;
         
         cout << left 
-             << setw(25) << "Route Strategy" 
+             << setw(35) << "Route Strategy" 
              << setw(15) << "Distance (km)" 
              << setw(15) << "Time (hrs)" 
              << setw(15) << "Fuel (RM)" 
@@ -344,7 +335,7 @@ public:
         
         for (const auto& route : routeResults) {
             cout << left
-                 << setw(25) << route.first
+                 << setw(35) << route.first
                  << setw(15) << route.second.totalDistance
                  << setw(15) << fixed << setprecision(2) << route.second.totalTime / 60
                  << setw(15) << fixed << setprecision(2) << route.second.totalFuel
@@ -1755,10 +1746,6 @@ public:
         }
     }
 
-    void setTextColor(int colorCode) {
-        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleTextAttribute(hConsole, colorCode);
-    }
 };
 
 int main() {

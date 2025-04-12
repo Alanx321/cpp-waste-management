@@ -34,6 +34,7 @@ class GreedyRoute;
 class TSPRoute;
 class MSTRoute;
 class AIPredictionModel;
+class WasteLocationManager;
 
 // Complete definition of RouteResults struct
 struct RouteResults {
@@ -1388,8 +1389,9 @@ private:
         cout << "5. Save Locations Info to File" << endl;
         cout << "6. View AI Predictions" << endl;
         cout << "7. Compare Route Costs" << endl;
-        cout << "8. Help" << endl;
-        cout << "9. Exit" << endl;
+        cout << "8. Waste Pattern Analytics Dashboard" << endl;
+        cout << "9. Help" << endl;
+        cout << "0. Exit" << endl;
         cout << "\nCurrent Route Algorithm: " << getCurrentRouteAlgorithm() << endl;
         cout << "\nEnter your choice: ";
     }
@@ -1588,6 +1590,19 @@ private:
         cout << "   You need to execute at least 2 different routes to use this feature." << endl;
         setTextColor(COLOR_WHITE);
         
+        cout << "\n8. Waste Pattern Analytics Dashboard:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Comprehensive dashboard that analyzes historical waste data," << endl;
+        cout << "   identifies patterns, and provides actionable insights including:" << endl;
+        cout << "   - Days until bins reach capacity" << endl;
+        cout << "   - Waste pattern classification" << endl;
+        cout << "   - Trend visualization" << endl;
+        cout << "   - Prioritized recommendations" << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n9. Help: Display this help information" << endl;
+        cout << "\n0. Exit: Close the application" << endl;
+        
         setTextColor(COLOR_GREEN);
         cout << "\n=== ADDITIONAL INFORMATION ===" << endl;
         setTextColor(COLOR_YELLOW);
@@ -1655,6 +1670,273 @@ private:
         
         cout << "\nPress any key to return to main menu...";
         _getch();
+    }
+
+    void displayAnalyticsDashboard() {
+        system("cls");
+        displayHeader();
+        
+        const vector<WasteLocation>& locations = locationManager->getLocations();
+        AIPredictionModel& aiModel = locationManager->getAIModel();
+        
+        setTextColor(COLOR_BLUE);
+        cout << "\n=================================================================" << endl;
+        cout << "               WASTE PATTERN ANALYTICS DASHBOARD                  " << endl;
+        cout << "=================================================================" << endl;
+        setTextColor(COLOR_WHITE);
+        
+        // Calculate overall waste statistics
+        double totalWaste = 0;
+        double avgWaste = 0;
+        int highPriorityLocations = 0;
+        int anomalies = 0;
+        
+        for (size_t i = 1; i < locations.size(); i++) {
+            totalWaste += locations[i].getWasteLevel();
+            if (locations[i].getWasteLevel() >= 70) highPriorityLocations++;
+            if (aiModel.isAnomaly(locations[i])) anomalies++;
+        }
+        
+        avgWaste = totalWaste / (locations.size() - 1);  // Skip HQ
+        
+        // Display summary section
+        cout << "\n----- SUMMARY STATISTICS -----" << endl;
+        cout << left << setw(35) << "Average Waste Level:" 
+             << fixed << setprecision(2) << avgWaste << "%" << endl;
+        cout << left << setw(35) << "High Priority Locations:" << highPriorityLocations << endl;
+        cout << left << setw(35) << "Detected Anomalies:" << anomalies << endl;
+        
+        // Display waste pattern analysis table
+        cout << "\n----- WASTE PATTERN ANALYSIS -----" << endl;
+        cout << left 
+             << setw(25) << "Location" 
+             << setw(15) << "Current %" 
+             << setw(15) << "Trend" 
+             << setw(20) << "Days to Capacity" 
+             << setw(20) << "Pattern Type" << endl;
+        cout << string(95, '-') << endl;
+        
+        for (size_t i = 1; i < locations.size(); i++) {
+            int current = locations[i].getWasteLevel();
+            string trend = aiModel.getWasteTrend(locations[i]);
+            
+            // Calculate days until capacity
+            int daysToCapacity = calculateDaysToCapacity(locations[i], aiModel);
+            
+            // Determine pattern type based on historical data
+            string patternType = determinePatternType(locations[i], aiModel);
+            
+            // Highlight based on priority
+            if (current >= 70) setTextColor(COLOR_RED);
+            else if (current >= 40) setTextColor(COLOR_YELLOW);
+            else setTextColor(COLOR_GREEN);
+            
+            cout << left << setw(25) << locations[i].getName()
+                 << setw(15) << (to_string(current) + " %")
+                 << setw(15) << trend;
+                 
+            // Display days to capacity with conditional formatting
+            if (daysToCapacity <= 2) {
+                setTextColor(COLOR_RED);
+                cout << setw(20) << daysToCapacity;
+                if (current >= 40) setTextColor(COLOR_YELLOW);
+                else setTextColor(COLOR_GREEN);
+            } else {
+                cout << setw(20) << daysToCapacity;
+            }
+            
+            // Anomaly-based pattern 
+            if (aiModel.isAnomaly(locations[i])) {
+                setTextColor(COLOR_RED);
+                cout << setw(20) << patternType + " [ANOMALY]" << endl;
+            } else {
+                cout << setw(20) << patternType << endl;
+            }
+            
+            setTextColor(COLOR_WHITE);
+        }
+        
+        // Display waste trend visualization
+        cout << "\n----- WASTE TREND VISUALIZATION -----" << endl;
+        visualizeWasteTrends(locations, aiModel);
+        
+        // Display insights and recommendations
+        cout << "\n----- INSIGHTS & RECOMMENDATIONS -----" << endl;
+        generateInsights(locations, aiModel);
+        
+        cout << "\nPress any key to return to the main menu...";
+        _getch();
+    }
+    
+    // Helper methods for analytics dashboard
+    int calculateDaysToCapacity(const WasteLocation& location, const AIPredictionModel& aiModel) {
+        int currentLevel = location.getWasteLevel();
+        if (currentLevel >= 95) return 0;  // Already at capacity
+        
+        string trend = aiModel.getWasteTrend(location);
+        
+        // Extract trend information to calculate daily increase rate
+        double dailyRate = 0;
+        
+        if (trend == "Rapidly increasing") dailyRate = 10.0;
+        else if (trend == "Increasing") dailyRate = 5.0;
+        else if (trend == "Stable") dailyRate = 2.0;
+        else if (trend == "Decreasing") dailyRate = -2.0;
+        else if (trend == "Rapidly decreasing") dailyRate = -5.0;
+        else dailyRate = 2.0;  // Default
+        
+        // If rate is negative or zero, waste won't reach capacity
+        if (dailyRate <= 0) return 99;  
+        
+        // Calculate days to reach 95% capacity
+        int daysToCapacity = ceil((95 - currentLevel) / dailyRate);
+        return max(0, daysToCapacity);
+    }
+    
+    string determinePatternType(const WasteLocation& location, const AIPredictionModel& aiModel) {
+        string trend = aiModel.getWasteTrend(location);
+        const vector<pair<int, double>>& historicalData = location.getHistoricalData();
+        
+        if (historicalData.size() < 5) {
+            return "Insufficient Data";
+        }
+        
+        // Calculate variability as a simple indicator of pattern type
+        double sum = 0;
+        double mean = 0;
+        double variance = 0;
+        
+        for (const auto& data : historicalData) {
+            sum += data.second;
+        }
+        mean = sum / historicalData.size();
+        
+        for (const auto& data : historicalData) {
+            variance += pow(data.second - mean, 2);
+        }
+        variance /= historicalData.size();
+        double stdDev = sqrt(variance);
+        
+        if (stdDev < 5.0) {
+            if (trend == "Stable") return "Consistent";
+            return "Steady " + trend;
+        } else if (stdDev < 15.0) {
+            return "Moderate Variability";
+        } else {
+            return "Highly Variable";
+        }
+    }
+    
+    void visualizeWasteTrends(const vector<WasteLocation>& locations, const AIPredictionModel& aiModel) {
+        // Find top 3 locations with fastest growth
+        vector<pair<string, string>> topGrowth;
+        
+        for (size_t i = 1; i < locations.size(); i++) {
+            string trend = aiModel.getWasteTrend(locations[i]);
+            if (trend == "Rapidly increasing" || trend == "Increasing") {
+                topGrowth.push_back({locations[i].getName(), trend});
+                if (topGrowth.size() >= 3) break;
+            }
+        }
+        
+        // Display visualization
+        cout << "Top Waste Growth Locations:" << endl;
+        
+        if (topGrowth.empty()) {
+            cout << "   No significant growth trends detected" << endl;
+        } else {
+            for (const auto& loc : topGrowth) {
+                cout << "   " << loc.first << " - " << loc.second << endl;
+                
+                // Simple ASCII chart showing predicted growth
+                int currentLevel = 0;
+                for (size_t i = 1; i < locations.size(); i++) {
+                    if (locations[i].getName() == loc.first) {
+                        currentLevel = locations[i].getWasteLevel();
+                        break;
+                    }
+                }
+                
+                cout << "   Current: [";
+                int barLength = currentLevel / 5;  // 20 chars = 100%
+                for (int j = 0; j < 20; j++) {
+                    if (j < barLength) cout << "█";
+                    else cout << " ";
+                }
+                cout << "] " << currentLevel << "%" << endl;
+                
+                // Show 3-day prediction
+                cout << "   3-Day:   [";
+                for (size_t i = 1; i < locations.size(); i++) {
+                    if (locations[i].getName() == loc.first) {
+                        int predictedLevel = aiModel.predictWasteLevel(locations[i], 3);
+                        barLength = predictedLevel / 5;
+                        for (int j = 0; j < 20; j++) {
+                            if (j < barLength) {
+                                if (j < currentLevel / 5) cout << "█";
+                                else cout << "▓";  // New growth
+                            } else cout << " ";
+                        }
+                        cout << "] " << predictedLevel << "%" << endl;
+                        break;
+                    }
+                }
+                cout << endl;
+            }
+        }
+    }
+    
+    void generateInsights(const vector<WasteLocation>& locations, const AIPredictionModel& aiModel) {
+        // Count locations by priority
+        int highPriority = 0;
+        int mediumPriority = 0;
+        int lowPriority = 0;
+        vector<string> anomalyLocations;
+        
+        for (size_t i = 1; i < locations.size(); i++) {
+            int level = locations[i].getWasteLevel();
+            if (level >= 70) highPriority++;
+            else if (level >= 40) mediumPriority++;
+            else lowPriority++;
+            
+            if (aiModel.isAnomaly(locations[i])) {
+                anomalyLocations.push_back(locations[i].getName());
+            }
+        }
+        
+        // Generate insights based on data
+        if (highPriority > 0) {
+            setTextColor(COLOR_RED);
+            cout << "• URGENT: " << highPriority << " location(s) require immediate attention" << endl;
+            setTextColor(COLOR_WHITE);
+        }
+        
+        if (mediumPriority > 0) {
+            setTextColor(COLOR_YELLOW);
+            cout << "• " << mediumPriority << " location(s) should be scheduled within the next 48 hours" << endl;
+            setTextColor(COLOR_WHITE);
+        }
+        
+        if (!anomalyLocations.empty()) {
+            setTextColor(COLOR_RED);
+            cout << "• Anomalies detected at: ";
+            for (size_t i = 0; i < anomalyLocations.size(); i++) {
+                cout << anomalyLocations[i];
+                if (i < anomalyLocations.size() - 1) cout << ", ";
+            }
+            cout << endl << "  Recommend investigation of sudden waste level changes" << endl;
+            setTextColor(COLOR_WHITE);
+        }
+        
+        // Overall waste management recommendations
+        cout << "• Recommendation: ";
+        if (highPriority > 2) {
+            cout << "Increase collection frequency for high-priority areas" << endl;
+        } else if (mediumPriority > locations.size() / 2) {
+            cout << "Consider optimizing routes to handle increasing waste levels" << endl;
+        } else {
+            cout << "Current collection schedule is adequate for waste volumes" << endl;
+        }
     }
 
 public:
@@ -1729,10 +2011,14 @@ public:
                     break;
                     
                 case 8:
+                    displayAnalyticsDashboard();
+                    break;
+                    
+                case 9:
                     showHelp();
                     break;
 
-                case 9:
+                case 0:
                     if (confirmAction("Are you sure you want to exit?")) {
                         running = false;
                     }
