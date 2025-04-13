@@ -17,6 +17,10 @@
 #include <windows.h>
 #include <cfloat>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 #define COLOR_RED 12
 #define COLOR_GREEN 10
 #define COLOR_BLUE 9
@@ -1937,6 +1941,14 @@ private:
         cout << "\n----- INSIGHTS & RECOMMENDATIONS -----" << endl;
         generateInsights(locations, aiModel);
         
+        // Display the most recent route on the map if available
+        if (!routeResults.empty()) {
+            // Get the most recent route result
+            auto it = routeResults.rbegin();
+            cout << "\n----- ROUTE MAP VISUALIZATION -----" << endl;
+            visualizeRouteMap(it->second, locationManager);
+        }
+
         cout << "\nPress any key to return to the main menu...";
         _getch();
     }
@@ -2112,6 +2124,170 @@ private:
         }
     }
 
+    // Add this to the WasteManagementSystem class in the private section
+    void visualizeRouteMap(const RouteResults& results, WasteLocationManager* manager) {
+        const vector<WasteLocation>& locations = manager->getLocations();
+        const int mapWidth = 60;
+        const int mapHeight = 20;
+        
+        // Create empty map grid
+        vector<vector<char>> map(mapHeight, vector<char>(mapWidth, ' '));
+        
+        // Simple coordinate mapping for demonstration
+        // In a real system, you might want to use actual geo-coordinates and scale them
+        unordered_map<int, pair<int, int>> locationCoords;
+        
+        // Assign coordinates to locations (simplified positioning)
+        locationCoords[0] = {mapWidth / 2, mapHeight / 2}; // HQ at center
+        
+        // Distribute other locations in a circular pattern around HQ
+        int radius = min(mapWidth, mapHeight) / 3;
+        for (size_t i = 1; i < locations.size(); i++) {
+            double angle = 2 * M_PI * (i - 1) / (locations.size() - 1);
+            int x = locationCoords[0].first + static_cast<int>(radius * cos(angle));
+            int y = locationCoords[0].second + static_cast<int>(radius * sin(angle));
+            
+            // Ensure coordinates are within bounds
+            x = max(0, min(mapWidth - 1, x));
+            y = max(0, min(mapHeight - 1, y));
+            
+            locationCoords[i] = {x, y};
+        }
+        
+        // Draw location points on map
+        for (size_t i = 0; i < locations.size(); i++) {
+            int x = locationCoords[i].first;
+            int y = locationCoords[i].second;
+            
+            // Use different symbols based on location type
+            if (i == 0) {
+                map[y][x] = 'H'; // HQ
+            } else {
+                // Check if this location is part of the route
+                bool isVisited = find(results.path.begin(), results.path.end(), i) != results.path.end();
+                
+                if (isVisited) {
+                    if (locations[i].getWasteLevel() >= 70) {
+                        map[y][x] = '!'; // High priority and visited
+                    } else {
+                        map[y][x] = 'O'; // Regular visited location
+                    }
+                } else {
+                    if (locations[i].getWasteLevel() >= 70) {
+                        map[y][x] = '*'; // High priority but not visited
+                    } else {
+                        map[y][x] = '.'; // Regular unvisited location
+                    }
+                }
+            }
+        }
+        
+        // Draw route lines on map using simple Bresenham's line algorithm
+        if (results.path.size() > 1) {
+            for (size_t i = 0; i < results.path.size() - 1; i++) {
+                int from = results.path[i];
+                int to = results.path[i + 1];
+                
+                // Get coordinates
+                int x1 = locationCoords[from].first;
+                int y1 = locationCoords[from].second;
+                int x2 = locationCoords[to].first;
+                int y2 = locationCoords[to].second;
+                
+                // Draw line between points
+                int dx = abs(x2 - x1);
+                int dy = abs(y2 - y1);
+                int sx = x1 < x2 ? 1 : -1;
+                int sy = y1 < y2 ? 1 : -1;
+                int err = dx - dy;
+                
+                while (true) {
+                    if (x1 == x2 && y1 == y2) break;
+                    
+                    int e2 = 2 * err;
+                    if (e2 > -dy) {
+                        err -= dy;
+                        x1 += sx;
+                    }
+                    if (e2 < dx) {
+                        err += dx;
+                        y1 += sy;
+                    }
+                    
+                    // Don't overwrite location markers
+                    if (map[y1][x1] == ' ') {
+                        if (i == results.path.size() - 2 && x1 == x2 && y1 == y2) {
+                            // This is the last segment and we're at the end point
+                            continue;
+                        }
+                        
+                        // Use different symbols for horizontal, vertical, and diagonal lines
+                        if (dx > dy) {
+                            map[y1][x1] = '-';
+                        } else if (dy > dx) {
+                            map[y1][x1] = '|';
+                        } else {
+                            map[y1][x1] = '\\';
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Print the map
+        cout << "\n    ASCII MAP VISUALIZATION OF ROUTE    " << endl;
+        cout << "    (H=HQ, O=Visited, .=Unvisited, !=High Priority)" << endl;
+        cout << "    " << string(mapWidth, '=') << endl;
+        
+        for (int y = 0; y < mapHeight; y++) {
+            cout << "    ";
+            for (int x = 0; x < mapWidth; x++) {
+                // Add color based on map element
+                if (map[y][x] == 'H') {
+                    setTextColor(COLOR_BLUE);
+                } else if (map[y][x] == 'O') {
+                    setTextColor(COLOR_GREEN);
+                } else if (map[y][x] == '!') {
+                    setTextColor(COLOR_RED);
+                } else if (map[y][x] == '*') {
+                    setTextColor(COLOR_YELLOW);
+                } else if (map[y][x] == '-' || map[y][x] == '|' || map[y][x] == '\\') {
+                    setTextColor(COLOR_WHITE);
+                }
+                
+                cout << map[y][x];
+                setTextColor(COLOR_WHITE);
+            }
+            cout << endl;
+        }
+        
+        cout << "    " << string(mapWidth, '=') << endl;
+        
+        // Add location legend at the bottom
+        cout << "\n    LOCATION LEGEND:" << endl;
+        for (size_t i = 0; i < locations.size(); i++) {
+            int x = locationCoords[i].first;
+            int y = locationCoords[i].second;
+            
+            // Color coding for location types
+            if (i == 0) {
+                setTextColor(COLOR_BLUE);
+            } else if (locations[i].getWasteLevel() >= 70) {
+                setTextColor(COLOR_RED);
+            } else if (find(results.path.begin(), results.path.end(), i) != results.path.end()) {
+                setTextColor(COLOR_GREEN);
+            } else {
+                setTextColor(COLOR_WHITE);
+            }
+            
+            cout << "    (" << setw(2) << x << "," << setw(2) << y << "): " 
+                 << locations[i].getName() << " - " 
+                 << locations[i].getWasteLevel() << "%" << endl;
+                 
+            setTextColor(COLOR_WHITE);
+        }
+    }
+
 public:
     WasteManagementSystem() : currentRoute(0) {
         locationManager = WasteLocationManager::getInstance();
@@ -2162,6 +2338,9 @@ public:
                             RouteResults results = route.executeRoute(locationManager);
                             // Store the results for comparison
                             routeResults[getCurrentRouteAlgorithm()] = results;
+                            
+                            // Add the ASCII map visualization
+                            visualizeRouteMap(results, locationManager);
                         } catch (const InvalidRouteException& e) {
                             cout << "Error: " << e.what() << endl;
                         }
