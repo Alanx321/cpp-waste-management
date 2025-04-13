@@ -15,6 +15,7 @@
 #include <memory>
 #include <cmath>
 #include <windows.h>
+#include <cfloat>
 
 #define COLOR_RED 12
 #define COLOR_GREEN 10
@@ -33,6 +34,7 @@ class OptimizedRoute;
 class GreedyRoute;
 class TSPRoute;
 class MSTRoute;
+class RLRoute;
 class AIPredictionModel;
 class WasteLocationManager;
 
@@ -1285,6 +1287,167 @@ public:
     }
 };
 
+// Add after the MSTRoute class definition
+class RLRoute : public RouteStrategy {
+private:
+    // Q-table for reinforcement learning
+    unordered_map<string, unordered_map<string, double>> qTable;
+    double learningRate = 0.1;
+    double discountFactor = 0.9;
+    double explorationRate = 0.2;
+    
+    // State representation
+    string getStateString(const vector<WasteLocation>& locations, int currentPos) {
+        string state;
+        for (size_t i = 0; i < locations.size(); i++) {
+            if (i == currentPos) continue;
+            state += to_string(locations[i].getWasteLevel()) + ",";
+        }
+        return state;
+    }
+    
+    // Load/save Q-table from/to file
+    void loadQTable(const string& filename) {
+        ifstream inFile(filename);
+        if (inFile) {
+            string fromState, toState;
+            double value;
+            while (inFile >> fromState >> toState >> value) {
+                qTable[fromState][toState] = value;
+            }
+        }
+    }
+    
+    void saveQTable(const string& filename) {
+        ofstream outFile(filename);
+        for (const auto& fromEntry : qTable) {
+            for (const auto& toEntry : fromEntry.second) {
+                outFile << fromEntry.first << " " << toEntry.first << " " << toEntry.second << endl;
+            }
+        }
+    }
+
+public:
+    RLRoute() {
+        loadQTable("qtable.txt"); // Load previous learning
+    }
+    
+    ~RLRoute() {
+        saveQTable("qtable.txt"); // Save learning for next time
+    }
+    
+    RouteResults calculateRoute(WasteLocationManager* manager) override {
+        RouteResults results;
+        results.totalDistance = 0;
+        results.totalTime = 0;
+        results.totalFuel = 0;
+        results.totalWage = 0;
+        
+        vector<WasteLocation>& locations = manager->getLocations();
+        
+        // Start from HQ (index 0)
+        results.path.push_back(0);
+        int currentPos = 0;
+        
+        // Get locations that need collection (waste level >= 30%)
+        vector<int> toVisit;
+        for (size_t i = 1; i < locations.size(); i++) {
+            if (locations[i].getWasteLevel() >= 30) {
+                toVisit.push_back(i);
+            }
+        }
+        
+        if (toVisit.empty()) {
+            results.path.clear();
+            return results;
+        }
+        
+        // Reinforcement learning based route selection
+        while (!toVisit.empty()) {
+            string currentState = getStateString(locations, currentPos);
+            
+            // Exploration vs exploitation
+            if ((rand() / (double)RAND_MAX) < explorationRate) {
+                // Exploration: random choice
+                int nextIndex = rand() % toVisit.size();
+                int nextPos = toVisit[nextIndex];
+                
+                // Visit this location
+                visitLocation(results, manager, currentPos, nextPos);
+                currentPos = nextPos;
+                toVisit.erase(toVisit.begin() + nextIndex);
+            } else {
+                // Exploitation: choose best known action
+                double maxQ = -DBL_MAX;
+                int bestNextPos = -1;
+                int bestIndex = -1;
+                
+                for (size_t i = 0; i < toVisit.size(); i++) {
+                    int candidatePos = toVisit[i];
+                    string candidateState = getStateString(locations, candidatePos);
+                    
+                    // Get Q-value or initialize if not present
+                    double qValue = qTable[currentState].count(candidateState) ? 
+                                   qTable[currentState][candidateState] : 0;
+                    
+                    // Add distance as immediate reward component
+                    int distance = manager->getDistance(currentPos, candidatePos);
+                    qValue -= distance * 0.1; // Penalize longer distances
+                    
+                    if (qValue > maxQ) {
+                        maxQ = qValue;
+                        bestNextPos = candidatePos;
+                        bestIndex = i;
+                    }
+                }
+                
+                if (bestNextPos != -1) {
+                    // Visit this location
+                    visitLocation(results, manager, currentPos, bestNextPos);
+                    
+                    // Update Q-table
+                    string nextState = getStateString(locations, bestNextPos);
+                    double reward = -manager->getDistance(currentPos, bestNextPos); // Negative distance as reward
+                    
+                    // Find max Q for next state
+                    double maxNextQ = 0;
+                    for (const auto& entry : qTable[nextState]) {
+                        if (entry.second > maxNextQ) {
+                            maxNextQ = entry.second;
+                        }
+                    }
+                    
+                    // Q-learning update
+                    qTable[currentState][nextState] = (1 - learningRate) * qTable[currentState][nextState] + 
+                                                     learningRate * (reward + discountFactor * maxNextQ);
+                    
+                    currentPos = bestNextPos;
+                    toVisit.erase(toVisit.begin() + bestIndex);
+                }
+            }
+        }
+        
+        // Return to HQ
+        visitLocation(results, manager, currentPos, 0);
+        
+        return results;
+    }
+    
+private:
+    void visitLocation(RouteResults& results, WasteLocationManager* manager, int from, int to) {
+        int distance = manager->getDistance(from, to);
+        double time = distance * TIME_PER_KM;
+        double fuel = distance * FUEL_COST_PER_KM;
+        double wage = (time / 60) * WAGE_PER_HOUR;
+        
+        results.path.push_back(to);
+        results.totalDistance += distance;
+        results.totalTime += time;
+        results.totalFuel += fuel;
+        results.totalWage += wage;
+    }
+};
+
 // Collection Route class using Strategy pattern
 class CollectionRoute {
 private:
@@ -1335,6 +1498,8 @@ public:
             return "Traveling Salesman Problem";
         } else if (dynamic_cast<MSTRoute*>(strategy.get())) {
             return "Minimum Spanning Tree";
+        } else if (dynamic_cast<RLRoute*>(strategy.get())) {
+            return "Reinforcement Learning";
         } else {
             return "Unknown Strategy";
         }
@@ -1406,7 +1571,8 @@ private:
         cout << "3. Greedy Route" << endl;
         cout << "4. Traveling Salesman Problem (TSP) Route" << endl;
         cout << "5. Minimum Spanning Tree (MST) Route" << endl;
-        cout << "6. Return to Main Menu" << endl;
+        cout << "6. Reinforcement Learning (RL) Route" << endl;
+        cout << "7. Return to Main Menu" << endl;
         cout << "\nEnter your choice: ";
         
         int choice;
@@ -1434,6 +1600,10 @@ private:
                 currentRoute = 5;
                 break;
             case 6:
+                route.setStrategy(make_shared<RLRoute>());
+                currentRoute = 6;
+                break;
+            case 7:
                 // Return to main menu
                 break;
             default:
@@ -1449,6 +1619,7 @@ private:
             case 3: return "Greedy";
             case 4: return "Traveling Salesman Problem (TSP)";
             case 5: return "Minimum Spanning Tree (MST)";
+            case 6: return "Reinforcement Learning (RL)";
             default: return "Not Selected";
         }
     }
@@ -1561,6 +1732,8 @@ private:
         cout << "     Salesman Problem algorithm to find the shortest path" << endl;
         cout << "   - MST: Visits locations with waste level ≥35% using a Minimum" << endl;
         cout << "     Spanning Tree to find an efficient route" << endl;
+        cout << "   - RL: Visits locations with waste level ≥30% using Reinforcement" << endl;
+        cout << "     Learning to optimize the route based on past experiences" << endl;
         setTextColor(COLOR_WHITE);
         
         cout << "\n4. Execute Selected Route:" << endl;
