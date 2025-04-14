@@ -311,10 +311,6 @@ public:
         SetConsoleTextAttribute(hConsole, COLOR_WHITE);
     }
 
-    static void clearScreen() {
-        system("cls");
-    }
-
     static void displayProgressBar(int progress) {
         cout << "[";
         for (int i = 0; i < 50; i++) {
@@ -326,31 +322,27 @@ public:
     }
     
     static void displayCostComparison(const map<string, RouteResults>& routeResults) {
-        cout << "\n===============================================" << endl;
-        cout << "          ROUTE COST COMPARISON                " << endl;
-        cout << "===============================================" << endl;
-        
-        cout << left 
-             << setw(35) << "Route Strategy" 
+        cout << "\nRoute Cost Comparison:" << endl;
+        cout << "====================================================================" << endl;
+        cout << left << setw(30) << "Route Type" 
              << setw(15) << "Distance (km)" 
-             << setw(15) << "Time (hrs)" 
+             << setw(15) << "Time (h)" 
              << setw(15) << "Fuel (RM)" 
              << setw(15) << "Wages (RM)" 
-             << setw(15) << "Total Cost (RM)" << endl;
-             
-        cout << string(100, '-') << endl;
+             << setw(15) << "Total (RM)" << endl;
+        cout << string(105, '-') << endl;
         
         for (const auto& route : routeResults) {
-            cout << left
-                 << setw(35) << route.first
+            double totalCost = route.second.totalFuel + route.second.totalWage;
+            cout << left << setw(30) << route.first
                  << setw(15) << route.second.totalDistance
-                 << setw(15) << fixed << setprecision(2) << route.second.totalTime / 60
+                 << setw(15) << fixed << setprecision(2) << (route.second.totalTime / 60)
                  << setw(15) << fixed << setprecision(2) << route.second.totalFuel
                  << setw(15) << fixed << setprecision(2) << route.second.totalWage
-                 << setw(15) << fixed << setprecision(2) << (route.second.totalFuel + route.second.totalWage) << endl;
+                 << setw(15) << fixed << setprecision(2) << totalCost << endl;
         }
         
-        cout << "===============================================" << endl;
+        cout << "====================================================================" << endl;
     }
 };
 
@@ -494,7 +486,7 @@ public:
     
     void generateRandomWasteLevels() {
         try {
-            UIHelper::clearScreen();
+            system("cls");
             cout << "\nGenerating random waste levels..." << endl;
             
             srand(static_cast<unsigned int>(time(nullptr)));
@@ -591,127 +583,143 @@ public:
         cout << "====================================================" << endl;
     }
     
-    void saveLocationsToFile(const string& filename) const {
-        try {
-            ofstream outFile(filename);
-            if (!outFile) {
-                throw FileOperationException("open", filename);
-            }
-
-            UIHelper::displayProgressBar(0);
-            
-            // File header
-            outFile << "Location Information\n";
-            outFile << "===========================================\n";
-            UIHelper::displayProgressBar(20);
-
-            // Write location data
-            for (size_t i = 0; i < locations.size(); i++) {
-                if (i == 0) continue; // Skip HQ
-                
-                int predictedWaste = aiModel.predictWasteLevel(locations[i], 1);
-                string trend = aiModel.getWasteTrend(locations[i]);
-                
-                outFile << left << setw(20) << locations[i].getName() 
-                       << setw(15) << locations[i].getWasteLevel() 
-                       << setw(20) << predictedWaste
-                       << setw(20) << trend << endl;
-            }
-            UIHelper::displayProgressBar(70);
-
-            // Write distance matrix
-            outFile << "\nDistance Matrix\n";
-            // ... rest of the matrix writing code ...
-            
-            outFile.close();
-            UIHelper::displayProgressBar(100);
-            cout << endl;
-            
-            if (!outFile.good()) {
-                throw FileOperationException("write", filename);
-            }
-
-            UIHelper::displaySuccess("Data saved successfully to " + filename);
-        }
-        catch (const FileOperationException& e) {
-            UIHelper::displayError(e.what());
-        }
-        catch (const exception& e) {
-            UIHelper::displayError("Unexpected error while saving file: " + string(e.what()));
-        }
-    }
-    
-    // Save all data to a binary file
-    bool saveAllData(const string& filename = "") {
-        string saveFile = filename.empty() ? lastSavedFilePath : filename;
+    // Save data to file - merged function for both text and binary formats
+    bool saveDataToFile(bool saveBinary = false, const string& filename = "") {
+        string saveFile;
         
         try {
-            ofstream outFile(saveFile, ios::binary);
-            if (!outFile) {
-                throw FileOperationException("open", saveFile);
+            system("cls");
+            cout << "\nSaving data..." << endl;
+            
+            // Determine filename
+            if (filename.empty()) {
+                if (saveBinary) {
+                    saveFile = lastSavedFilePath;
+                } else {
+                    saveFile = "locations_info.txt";
+                }
+            } else {
+                saveFile = filename;
             }
-
+            
             UIHelper::displayProgressBar(0);
-            cout << "Saving data to " << saveFile << "..." << endl;
             
-            // Save number of locations
-            int numLocations = locations.size();
-            outFile.write(reinterpret_cast<char*>(&numLocations), sizeof(numLocations));
-            UIHelper::displayProgressBar(10);
-            
-            // Save each location's data
-            for (size_t i = 0; i < locations.size(); i++) {
-                // Save location name
-                string name = locations[i].getName();
-                int nameLength = name.length();
-                outFile.write(reinterpret_cast<char*>(&nameLength), sizeof(nameLength));
-                outFile.write(name.c_str(), nameLength);
+            // Binary mode (for complete data) or text mode (for human-readable)
+            if (saveBinary) {
+                ofstream outFile(saveFile, ios::binary);
+                if (!outFile) {
+                    throw FileOperationException("open", saveFile);
+                }
+
+                cout << "Saving complete data to " << saveFile << "..." << endl;
                 
-                // Save waste level and collection status
-                int wasteLevel = locations[i].getWasteLevel();
-                bool isCollected = locations[i].getIsCollected();
-                outFile.write(reinterpret_cast<char*>(&wasteLevel), sizeof(wasteLevel));
-                outFile.write(reinterpret_cast<char*>(&isCollected), sizeof(isCollected));
+                // Save number of locations
+                int numLocations = locations.size();
+                outFile.write(reinterpret_cast<char*>(&numLocations), sizeof(numLocations));
+                UIHelper::displayProgressBar(10);
                 
-                // Save historical data
-                const vector<pair<int, double>>& history = locations[i].getHistoricalData();
-                int historySize = history.size();
-                outFile.write(reinterpret_cast<char*>(&historySize), sizeof(historySize));
-                
-                for (const auto& point : history) {
-                    outFile.write(reinterpret_cast<const char*>(&point.first), sizeof(point.first));
-                    outFile.write(reinterpret_cast<const char*>(&point.second), sizeof(point.second));
+                // Save each location's data
+                for (size_t i = 0; i < locations.size(); i++) {
+                    // Save location name
+                    string name = locations[i].getName();
+                    int nameLength = name.length();
+                    outFile.write(reinterpret_cast<char*>(&nameLength), sizeof(nameLength));
+                    outFile.write(name.c_str(), nameLength);
+                    
+                    // Save waste level and collection status
+                    int wasteLevel = locations[i].getWasteLevel();
+                    bool isCollected = locations[i].getIsCollected();
+                    outFile.write(reinterpret_cast<char*>(&wasteLevel), sizeof(wasteLevel));
+                    outFile.write(reinterpret_cast<char*>(&isCollected), sizeof(isCollected));
+                    
+                    // Save historical data
+                    const vector<pair<int, double>>& history = locations[i].getHistoricalData();
+                    int historySize = history.size();
+                    outFile.write(reinterpret_cast<char*>(&historySize), sizeof(historySize));
+                    
+                    for (const auto& point : history) {
+                        outFile.write(reinterpret_cast<const char*>(&point.first), sizeof(point.first));
+                        outFile.write(reinterpret_cast<const char*>(&point.second), sizeof(point.second));
+                    }
+                    
+                    UIHelper::displayProgressBar(10 + (i * 40 / locations.size()));
                 }
                 
-                UIHelper::displayProgressBar(10 + (i * 40 / locations.size()));
-            }
-            
-            // Save distance matrix
-            int rows = distanceMatrix.size();
-            outFile.write(reinterpret_cast<char*>(&rows), sizeof(rows));
-            
-            for (size_t i = 0; i < distanceMatrix.size(); i++) {
-                int cols = distanceMatrix[i].size();
-                outFile.write(reinterpret_cast<char*>(&cols), sizeof(cols));
+                // Save distance matrix
+                int rows = distanceMatrix.size();
+                outFile.write(reinterpret_cast<char*>(&rows), sizeof(rows));
                 
-                for (int j = 0; j < cols; j++) {
-                    outFile.write(reinterpret_cast<char*>(&distanceMatrix[i][j]), sizeof(int));
+                for (size_t i = 0; i < distanceMatrix.size(); i++) {
+                    int cols = distanceMatrix[i].size();
+                    outFile.write(reinterpret_cast<char*>(&cols), sizeof(cols));
+                    
+                    for (int j = 0; j < cols; j++) {
+                        outFile.write(reinterpret_cast<char*>(&distanceMatrix[i][j]), sizeof(int));
+                    }
+                    
+                    UIHelper::displayProgressBar(50 + (i * 50 / rows));
                 }
                 
-                UIHelper::displayProgressBar(50 + (i * 50 / rows));
+                // Save the file path for future reference
+                lastSavedFilePath = saveFile;
+            } else {
+                // Text mode for human-readable output
+                ofstream outFile(saveFile);
+                if (!outFile) {
+                    throw FileOperationException("open", saveFile);
+                }
+
+                // File header
+                outFile << "Location Information\n";
+                outFile << "===========================================\n";
+                UIHelper::displayProgressBar(20);
+
+                // Write location data
+                for (size_t i = 0; i < locations.size(); i++) {
+                    if (i == 0) continue; // Skip HQ
+                    
+                    int predictedWaste = aiModel.predictWasteLevel(locations[i], 1);
+                    string trend = aiModel.getWasteTrend(locations[i]);
+                    
+                    outFile << left << setw(20) << locations[i].getName() 
+                           << setw(15) << locations[i].getWasteLevel() 
+                           << setw(20) << predictedWaste
+                           << setw(20) << trend << endl;
+                }
+                UIHelper::displayProgressBar(70);
+
+                // Write distance matrix
+                outFile << "\nDistance Matrix\n";
+                outFile << "===========================================\n";
+                
+                // Header row with location names
+                outFile << setw(20) << "From \\ To";
+                for (size_t j = 0; j < locations.size(); j++) {
+                    outFile << setw(15) << locations[j].getName();
+                }
+                outFile << endl;
+                
+                // Matrix data
+                for (size_t i = 0; i < locations.size(); i++) {
+                    outFile << setw(20) << locations[i].getName();
+                    for (size_t j = 0; j < locations.size(); j++) {
+                        outFile << setw(15) << distanceMatrix[i][j];
+                    }
+                    outFile << endl;
+                }
+                UIHelper::displayProgressBar(90);
             }
             
-            outFile.close();
             UIHelper::displayProgressBar(100);
             cout << endl;
             
-            if (!outFile.good()) {
-                throw FileOperationException("write", saveFile);
+            // Success message
+            if (saveBinary) {
+                UIHelper::displaySuccess("Complete data saved successfully to " + saveFile);
+            } else {
+                UIHelper::displaySuccess("Location information saved successfully to " + saveFile);
             }
             
-            // Save the file path for future reference
-            lastSavedFilePath = saveFile;
-            UIHelper::displaySuccess("Data saved successfully to " + saveFile);
             return true;
         }
         catch (const FileOperationException& e) {
@@ -2068,7 +2076,7 @@ private:
         switch (choice) {
             case 1: {
                 // Save to default file
-                bool success = locationManager->saveAllData();
+                bool success = locationManager->saveDataToFile(true);
                 if (success) {
                     cout << "\nData saved successfully to " << locationManager->getLastSavedFilePath() << endl;
                 }
@@ -2081,7 +2089,7 @@ private:
                 cout << "Enter the filename to save to (e.g., mydata.dat): ";
                 cin >> filename;
                 
-                bool success = locationManager->saveAllData(filename);
+                bool success = locationManager->saveDataToFile(true, filename);
                 if (success) {
                     cout << "\nData saved successfully to " << filename << endl;
                 }
@@ -2790,8 +2798,7 @@ public:
                     break;
                     
                 case 5:
-                    locationManager->saveLocationsToFile("locations_info.txt");
-                    cout << "Locations information saved to 'locations_info.txt'" << endl;
+                    locationManager->saveDataToFile(false);
                     system("pause");
                     break;
                     
@@ -2827,7 +2834,7 @@ public:
                     if (confirmAction("Are you sure you want to exit?")) {
                         // Ask to save before exit
                         if (confirmAction("Do you want to save your data before exiting?")) {
-                            locationManager->saveAllData();
+                            locationManager->saveDataToFile(true);
                         }
                         running = false;
                     }
