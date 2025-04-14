@@ -1,67 +1,97 @@
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <vector>
-#include <ctime>
-#include <cstdlib>
-#include <iomanip>
-#include <algorithm>
-#include <conio.h>
-#include <queue>
-#include <stack>
-#include <limits>
-#include <map>
-#include <unordered_map>
-#include <memory>
-#include <cmath>
-#include <windows.h>
-#include <cfloat>
+// Standard C++ libraries for various functionalities
+#include <iostream>     // Input/output stream operations
+#include <fstream>      // File stream operations for data persistence
+#include <string>       // String handling
+#include <vector>       // Dynamic arrays
+#include <ctime>        // Time-related functions for timestamps
+#include <cstdlib>      // General utilities
+#include <iomanip>      // I/O manipulation for formatting output
+#include <algorithm>    // Standard algorithms like find, sort
+#include <conio.h>      // Console I/O for non-blocking input (getch)
+#include <queue>        // Queue container for BFS algorithms
+#include <stack>        // Stack container for DFS traversal
+#include <limits>       // Numeric limits for algorithm boundary conditions
+#include <map>          // Ordered associative container
+#include <unordered_map>// Hash-based map for faster lookups
+#include <memory>       // Smart pointers for automatic memory management
+#include <cmath>        // Mathematical functions
+#include <windows.h>    // Windows-specific API for console colors
+#include <cfloat>       // Floating-point constants like DBL_MAX
 
+// Define PI if not already defined by system headers
 #ifndef M_PI
-#define M_PI 3.14159265358979323846
+#define M_PI 3.14159265358979323846  // Used for circular position calculations in map visualization
 #endif
 
-#define COLOR_RED 12
-#define COLOR_GREEN 10
-#define COLOR_BLUE 9
-#define COLOR_YELLOW 14
-#define COLOR_WHITE 15
+// Console color constants for visual feedback
+#define COLOR_RED 12    // For high-priority items and errors
+#define COLOR_GREEN 10  // For success messages and normal waste levels
+#define COLOR_BLUE 9    // For informational elements
+#define COLOR_YELLOW 14 // For warnings and medium-priority items
+#define COLOR_WHITE 15  // Default text color
 
 using namespace std;
 
 // Forward declarations
+// The system follows a layered architecture with separation of concerns:
+// - WasteLocation: Core data entity representing collection points
+// - RouteStrategy: Strategy pattern for different routing algorithms
+// - AIPredictionModel: ML-based analytics for waste level forecasting
+// - WasteLocationManager: Singleton for centralized data management
 class WasteLocation;
-class CollectionRoute;
-class RouteStrategy;
-class NonOptimizedRoute;
-class OptimizedRoute;
-class GreedyRoute;
-class TSPRoute;
-class MSTRoute;
-class RLRoute;
-class AIPredictionModel;
-class WasteLocationManager;
+class CollectionRoute;       // Facade for route execution with strategy injection
+class RouteStrategy;         // Abstract base class for all routing algorithms
+class NonOptimizedRoute;     // Basic route for locations with ≥40% waste within 30km
+class OptimizedRoute;        // Optimized route for locations with ≥60% waste within 20km
+class GreedyRoute;           // Nearest-neighbor based route for ≥30% waste levels
+class TSPRoute;              // Traveling Salesman Problem route for minimal distance
+class MSTRoute;              // Minimum Spanning Tree based route for efficient clustering
+class RLRoute;               // Reinforcement Learning route with adaptive optimization
+class AIPredictionModel;     // Machine learning model for waste trend analysis and forecasting
+class WasteLocationManager;  // Singleton manager for location data with persistence support
 
 // Complete definition of RouteResults struct
+// Container for route calculation outcomes, used for cost analysis,
+// visualization, and comparison between different routing strategies
 struct RouteResults {
-    vector<int> path;
-    int totalDistance;
-    double totalTime;
-    double totalFuel;
-    double totalWage;
+    vector<int> path;         // Ordered sequence of location indices to visit
+    int totalDistance;        // Total route distance in kilometers
+    double totalTime;         // Total collection time in minutes
+    double totalFuel;         // Total fuel cost in Malaysian Ringgit (RM)
+    double totalWage;         // Total wage cost for collection crew in RM
 };
 
 // Exception classes
 class InvalidRouteException : public exception {
-private:
-    string message;
-public:
-    InvalidRouteException(const string& msg) : message(msg) {}
-    const char* what() const noexcept override {
-        return message.c_str();
-    }
-};
-
+    private:
+        string message;  // Custom error message to provide context-specific details about route failures
+    public:
+        // Constructor captures a descriptive error message to help with debugging route calculation problems
+        InvalidRouteException(const string& msg) : message(msg) {}
+        // Override of std::exception's what() method to return our custom error message
+        // noexcept guarantees this won't throw additional exceptions during error handling
+        const char* what() const noexcept override {
+            return message.c_str();
+        }
+    };
+/**
+ * @class WasteManagementException
+ * @brief A custom exception class for waste management errors.
+ * 
+ * This class is derived from the standard exception class and provides a custom implementation for waste management related exceptions.
+ * It contains a string message that can be accessed using the what() method.
+ * 
+ * @var message The error message associated with the exception.
+ * 
+ * @public
+ * @constructor WasteManagementException
+ * @param msg The error message to be associated with the exception.
+ * 
+ * @public
+ * @method const char* what()
+ * @brief Returns the error message associated with the exception.
+ * @return The error message as a const char pointer.
+ */
 class WasteManagementException : public exception {
 protected:
     string message;
@@ -69,26 +99,113 @@ public:
     WasteManagementException(const string& msg) : message(msg) {}
     const char* what() const noexcept override { return message.c_str(); }
 };
+/**
+ * @class LocationNotFoundException
+ * @brief Exception class for when a location is not found in waste management.
+ */
 
 class LocationNotFoundException : public WasteManagementException {
 public:
     LocationNotFoundException(const string& location) 
         : WasteManagementException("Location not found: " + location) {}
 };
-
+/**
+ * @class InvalidWasteLevelException
+ * @brief A custom exception class for invalid waste levels in waste management.
+ * 
+ * This exception is thrown when an invalid waste level is encountered for a specific location.
+ * 
+ * @inheritance WasteManagementException
+ * 
+ * @public
+ * @constructor
+ * @param location The location where the invalid waste level was encountered.
+ * @param level The invalid waste level.
+ */
 class InvalidWasteLevelException : public WasteManagementException {
 public:
     InvalidWasteLevelException(const string& location, int level) 
         : WasteManagementException("Invalid waste level " + to_string(level) + 
                                  "% for location: " + location) {}
 };
-
+/**
+ * @brief A custom exception class for file operations.
+ * 
+ * This class is derived from the WasteManagementException class and is used to handle exceptions related to file operations.
+ */
+ 
 class FileOperationException : public WasteManagementException {
 public:
     FileOperationException(const string& operation, const string& filename) 
         : WasteManagementException("File " + operation + " failed for: " + filename) {}
 };
-
+/**
+ * @class WasteLocation
+ * 
+ * @brief A class representing a waste location with its waste level and collection status.
+ * 
+ * The WasteLocation class stores information about a waste location, including its name, waste level in percentage, collection status, and historical data for AI prediction. It provides methods to retrieve and modify these attributes.
+ * 
+ * Public Methods:
+ * - `WasteLocation(const string& locationName, int initialWasteLevel = 0)`: Constructs a WasteLocation object with the specified name and initial waste level.
+ * - `string getName() const`: Returns the name of the waste location.
+ * - `int getWasteLevel() const`: Returns the current waste level of the waste location.
+ * - `bool getIsCollected() const`: Returns the collection status of the waste location.
+ * - `void setWasteLevel(int level)`: Sets the waste level of the waste location and stores the previous waste level for AI prediction.
+ * - `void setIsCollected(bool collected)`: Sets the collection status of the waste location.
+ * - `const vector<pair<int, double>>& getHistoricalData() const`: Returns the historical data of waste levels for AI prediction.
+ * - `void addHistoricalDataPoint(time_t timestamp, double level)`: Adds a data point to the historical data of waste levels.
+ * - `void clearHistoricalData()`: Clears the historical data of waste levels.
+ *//**
+ * @class WasteLocation
+ * 
+ * @brief A class that represents a waste location.
+ * 
+ * The WasteLocation class stores information about a waste location, including its name, waste level, collection status, and historical waste level data. It provides methods to retrieve and modify these attributes.
+ * 
+ * @private
+ * @member name: The name of the waste location.
+ * @member wasteLevel: The waste level of the location in percentage.
+ * @member isCollected: A boolean flag indicating whether the waste has been collected.
+ * @member previousWasteLevels: A vector of pairs storing the historical waste level data for AI prediction.
+ * 
+ * @public
+ * @constructor WasteLocation: Constructs a WasteLocation object with the given name and initial waste level.
+ * @param locationName: The name of the waste location.
+ * @param initialWasteLevel: The initial waste level of the location (default: 0).
+ * 
+ * @public
+ * @method getName: Retrieves the name of the waste location.
+ * @return The name of the waste location.
+ * 
+ * @public
+ * @method getWasteLevel: Retrieves the waste level of the location.
+ * @return The waste level of the location.
+ * 
+ * @public
+ * @method getIsCollected: Retrieves the collection status of the waste location.
+ * @return A boolean flag indicating whether the waste has been collected.
+ * 
+ * @public
+ * @method setWasteLevel: Sets the waste level of the location.
+ * @param level: The waste level to be set.
+ * 
+ * @public
+ * @method setIsCollected: Sets the collection status of the waste location.
+ * @param collected: A boolean flag indicating whether the waste has been collected.
+ * 
+ * @public
+ * @method getHistoricalData: Retrieves the historical waste level data.
+ * @return A const reference to the vector of pairs storing the historical waste level data.
+ * 
+ * @public
+ * @method addHistoricalDataPoint: Adds a data point to the historical waste level data.
+ * @param timestamp: The timestamp of the data point.
+ * @param level: The waste level of the data point.
+ * 
+ * @public
+ * @method clearHistoricalData: Clears the historical waste level data.
+ */
 class WasteLocation {
 private:
     string name;
@@ -137,7 +254,28 @@ public:
     }
 };
 
-// AI Model for waste prediction
+/**
+ * @class AIPredictionModel
+ * 
+ * @brief A class that represents an AI prediction model for waste level prediction and analysis.
+ * 
+ * This class provides functionality for predicting waste levels, detecting anomalies, and analyzing waste level trends.
+ * 
+ * The prediction model utilizes simple linear regression to calculate the regression parameters, such as slope and intercept,
+ * based on historical data. It then uses these parameters to predict the waste level for a future day. The prediction is
+ * constrained to be within the range of 0 to 100.
+ * 
+ * Anomaly detection is performed by calculating the mean and standard deviation of the historical data. If the current waste
+ * level deviates more than 2 standard deviations from the mean, it is flagged as an anomaly.
+ * 
+ * Waste level trend analysis is also supported by calculating the regression parameters. The slope of the regression line is
+ * used to determine the trend. The trend is classified as rapidly decreasing, decreasing, stable, increasing, or rapidly
+ * increasing based on predefined thresholds.
+ * 
+ * The AIPredictionModel class is designed to be used with the WasteLocation class, which provides the necessary data for
+ * prediction, anomaly detection, and trend analysis.
+ */
+ // AI Model for waste prediction
 class AIPredictionModel {
 private:
     // Simple linear regression model
@@ -280,6 +418,13 @@ void setTextColor(int colorCode) {
     SetConsoleTextAttribute(hConsole, colorCode);
 }
 
+/**
+ * @class UIHelper
+ * @brief A helper class for displaying various types of messages and information in the user interface.
+ * 
+ * This class provides static methods for displaying error messages, success messages, warnings, savings information,
+ * progress bars, and cost comparisons in the user interface.
+ */
 // Add this before WasteLocationManager class
 class UIHelper {
 public:
@@ -346,7 +491,28 @@ public:
     }
 };
 
-// Then your existing WasteLocationManager class follows
+/** 
+ * WasteLocationManager class is responsible for managing waste locations, their data, and performing operations on them.
+ * It provides functionality to add locations, initialize them, generate random waste levels, get locations, get distances,
+ * print location information, save data to a file, load data from a file, delete data file, check if data file exists,
+ * and simulate trending waste levels.
+ * 
+ * Public Methods:
+ *   - void addLocation(const string& name): Adds a waste location with the given name.
+ *   - void initializeLocations(): Initializes the waste locations with default data.
+ *   - void generateRandomWasteLevels(): Generates random waste levels for each location.
+ *   - vector<WasteLocation>& getLocations(): Returns the vector of waste locations.
+ *   - int getDistance(int from, int to) const: Returns the distance between two waste locations.
+ *   - void printLocationsInfo() const: Prints the information of all waste locations.
+ *   - bool saveDataToFile(bool saveBinary = false, const string& filename = ""): Saves the data to a file, either in binary or text format.
+ *   - bool loadAllData(const string& filename = ""): Loads all data from a binary file.
+ *   - bool deleteDataFile(const string& filename = ""): Deletes the specified data file.
+ *   - bool dataFileExists(const string& filename = ""): Checks if the specified data file exists.
+ *   - string getLastSavedFilePath() const: Returns the path of the last saved data file.
+ *   - void setLastSavedFilePath(const string& filePath): Sets the path of the last saved data file.
+ *   - AIPredictionModel& getAIModel(): Returns the AI prediction model.
+ *   - void simulateTrendingWasteLevels(): Simulates trending waste levels for each location.
+ */
 class WasteLocationManager {
 private:
     vector<WasteLocation> locations;
@@ -919,7 +1085,20 @@ WasteLocationManager* WasteLocationManager::instance = nullptr;
 
 // Move RouteResults outside of RouteStrategy class to make it accessible to all classes
 
-// Strategy Pattern for different route algorithms
+/**
+ * @class RouteStrategy
+ * 
+ * @brief A base class for implementing various route calculation strategies.
+ * 
+ * This class provides a framework for calculating routes based on different strategies. It contains constants for cost calculation, a pure virtual method to be implemented by concrete strategies, and methods to save route information to a file and print route information to the console.
+ * 
+ * The RouteStrategy class is designed to be inherited from and extended by concrete strategy classes. It provides the necessary infrastructure for route calculation and output, while allowing for customization and flexibility through the implementation of the calculateRoute method in derived classes.
+ * 
+ * The class also includes helper methods to save and print route information, which can be used by derived classes to generate route reports in different formats.
+ * 
+ * @note This class is intended to be used as a base class and should not be instantiated directly.
+ */
+ // Strategy Pattern for different route algorithms
 class RouteStrategy {
 protected:
     // Constants for cost calculation
@@ -1027,6 +1206,16 @@ public:
     }
 };
 
+/**
+ * @class NonOptimizedRoute
+ * 
+ * @brief A class that represents a non-optimized route strategy for waste collection.
+ * 
+ * This class extends the RouteStrategy class and provides a method to calculate a route for waste collection.
+ * The route is calculated based on the criteria that the waste level of a location is greater than or equal to 40% and the distance to the location is less than or equal to 30km.
+ * The class keeps track of the total distance, total time, total fuel cost, and total wage for the calculated route.
+ * If any locations are visited, the class also includes the path to return to the headquarters.
+ */
 // Concrete strategy: Non-optimized route
 class NonOptimizedRoute : public RouteStrategy {
 public:
@@ -1092,6 +1281,16 @@ public:
     }
 };
 
+/**
+ * @class OptimizedRoute
+ * @brief A class that represents an optimized route strategy for waste management.
+ * 
+ * This class extends the RouteStrategy base class and provides an implementation of the calculateRoute method.
+ * The calculateRoute method calculates the optimized route based on certain criteria, such as waste level and distance.
+ * 
+ * @public
+ * @inherits RouteStrategy
+ */
 // Concrete strategy: Optimized route
 class OptimizedRoute : public RouteStrategy {
 public:
@@ -1157,7 +1356,28 @@ public:
     }
 };
 
-// Concrete strategy: Greedy route
+/**
+ * @class GreedyRoute
+ * 
+ * @brief A class that implements the RouteStrategy interface using a greedy algorithm to calculate the route for waste collection.
+ * 
+ * The GreedyRoute class extends the RouteStrategy class and provides an implementation for the calculateRoute method. 
+ * It uses a greedy algorithm to determine the most efficient path to collect waste from waste locations based on a given criteria.
+ * 
+ * The calculateRoute method takes a WasteLocationManager object as a parameter and returns a RouteResults object that contains 
+ * information about the calculated route, such as the total distance, total time, total fuel cost, and total wage. 
+ * The method uses the greedy algorithm to visit the waste locations in the order of their proximity to the current position, 
+ * while considering the waste level criteria. It starts from the headquarters (index 0) and iteratively selects the nearest 
+ * unvisited waste location that meets the waste level criteria. The algorithm continues until all eligible waste locations 
+ * have been visited or there are no more waste locations to visit.
+ * 
+ * The calculateRoute method also calculates the costs for each leg of the route, including the time, fuel, and wage. 
+ * It updates the total distance, total time, total fuel, and total wage as it visits each waste location. 
+ * Finally, it returns to the headquarters to complete the route, updating the totals for the return trip as well.
+ * 
+ * The GreedyRoute class provides an efficient approach to waste collection by prioritizing waste locations based on their proximity 
+ * and waste level, resulting in reduced travel time, fuel consumption, and labor costs.
+ */// Concrete strategy: Greedy route
 class GreedyRoute : public RouteStrategy {
 public:
     RouteResults calculateRoute(WasteLocationManager* manager) override {
@@ -1254,6 +1474,42 @@ public:
     }
 };
 
+/**
+ * TSPRoute class is a subclass of RouteStrategy and implements the Traveling Salesman Problem (TSP) algorithm.
+ * It calculates the optimal route to visit waste locations with a waste level of at least 25%.
+ * 
+ * The TSP algorithm is implemented using dynamic programming to find the minimum distance path.
+ * 
+ * Public Methods:
+ *   - calculateRoute: Calculates the optimal route based on waste locations and their distances.
+ * 
+ * Private Methods:
+ *   - tspUtil: Helper function for TSP using dynamic programming.
+ *   - tspPath: Function to find the TSP path based on the calculated distances.
+ * 
+ * Dependencies:
+ *   - RouteStrategy: Superclass for defining route calculation strategies.
+ *   - WasteLocationManager: Manages waste locations and provides distance information.
+ *   - WasteLocation: Represents a waste location with its waste level.
+ * 
+ * Constants:
+ *   - TIME_PER_KM: Time taken to travel 1 kilometer.
+ *   - FUEL_COST_PER_KM: Fuel cost to travel 1 kilometer.
+ *   - WAGE_PER_HOUR: Wage per hour for the waste collection.
+ * 
+ * Member Variables:
+ *   - totalDistance: Total distance of the calculated route.
+ *   - totalTime: Total time taken to travel the calculated route.
+ *   - totalFuel: Total fuel cost for the calculated route.
+ *   - totalWage: Total wage cost for the waste collection on the calculated route.
+ *   - locationsToVisit: List of waste locations to visit, including the headquarters.
+ *   - dist: Distance matrix for the waste locations.
+ * 
+ * Usage:
+ *   TSPRoute tspRoute;
+ *   RouteResults results = tspRoute.calculateRoute(wasteLocationManager);
+ *   // Access the calculated route and other information from the results object.
+ */
 // Concrete strategy: Traveling Salesman Problem route
 class TSPRoute : public RouteStrategy {
 private:
@@ -1387,6 +1643,14 @@ public:
     }
 };
 
+/**
+ * \class MSTRoute
+ * \brief A class that implements the MSTRoute route strategy.
+ *
+ * The MSTRoute class is a derived class of the RouteStrategy base class. It provides an implementation of the calculateRoute method, which calculates the optimal route for waste collection based on the minimum spanning tree (MST) algorithm.
+ *
+ * \note This class assumes that the WasteLocationManager and WasteLocation classes are defined.
+ */
 // Concrete strategy: Minimum Spanning Tree route
 class MSTRoute : public RouteStrategy {
 private:
@@ -1527,7 +1791,27 @@ public:
     }
 };
 
-// Add after the MSTRoute class definition
+/**
+ * RLRoute class is a RouteStrategy implementation that uses reinforcement learning
+ * to calculate the route for waste collection. It extends the RouteStrategy class.
+ * 
+ * The class contains the following private members:
+ * - qTable: unordered_map to store the Q-values for each state-action pair
+ * - learningRate: double to specify the learning rate for updating Q-values
+ * - discountFactor: double to specify the discount factor for future rewards
+ * - explorationRate: double to specify the rate of exploration vs exploitation
+ * 
+ * The class provides the following public methods:
+ * - RLRoute(): constructor that loads the Q-table from a file
+ * - ~RLRoute(): destructor that saves the Q-table to a file
+ * - calculateRoute(WasteLocationManager* manager): method to calculate the route based on the Q-table
+ * 
+ * The class also contains the following private methods:
+ * - getStateString(const vector<WasteLocation>& locations, int currentPos): method to get the state representation as a string
+ * - loadQTable(const string& filename): method to load the Q-table from a file
+ * - saveQTable(const string& filename): method to save the Q-table to a file
+ * - visitLocation(RouteResults& results, WasteLocationManager* manager, int from, int to): method to visit a waste location and update the route results
+ */// Add after the MSTRoute class definition
 class RLRoute : public RouteStrategy {
 private:
     // Q-table for reinforcement learning
@@ -1688,7 +1972,17 @@ private:
     }
 };
 
-// Collection Route class using Strategy pattern
+/**
+ * @class CollectionRoute
+ * 
+ * @brief A class that represents a collection route with a strategy for calculating the optimal route.
+ * 
+ * The CollectionRoute class is responsible for executing a collection route using a specified strategy.
+ * It allows the user to set a strategy, execute the route, calculate the optimal route, print route information,
+ * and save the route information to a file.
+ * 
+ * The class also provides a method to get the name of the current strategy being used.
+ */// Collection Route class using Strategy pattern
 class CollectionRoute {
 private:
     shared_ptr<RouteStrategy> strategy;
@@ -1766,7 +2060,15 @@ void visualizeRoute(const RouteResults& results, WasteLocationManager* manager) 
     cout << "===================================================" << endl;
 }
 
-// Main User Interface Class
+//The `WasteManagementSystem` class is a system for managing waste collection. It includes various functionalities such as generating random waste levels, viewing waste location information, selecting route algorithms, executing selected routes, saving location information to a file, viewing AI predictions, comparing route costs, displaying a waste pattern analytics dashboard, providing help documentation, saving all data, loading data, and deleting saved data.
+
+//To use the system, create an instance of the `WasteManagementSystem` class and call the `run` method. This will display a menu for the user to select different options and perform the corresponding actions.
+
+//The class includes private methods for displaying the system header, menu, and other UI elements. It also includes methods for selecting a route algorithm, getting the current route algorithm, viewing AI predictions, showing help documentation, confirming an action, saving data, loading data, and deleting data.
+
+//The class also includes a map to store route results and a method to compare routes and display the cost savings analysis. Additionally, there are methods for displaying the waste pattern analytics dashboard and visualizing the route on a map.
+
+//Please refer to the code for more details on the implementation of each method.// Main User Interface Class
 class WasteManagementSystem {
 private:
     WasteLocationManager* locationManager;
