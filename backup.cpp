@@ -360,10 +360,12 @@ private:
     vector<WasteLocation> locations;
     vector<vector<int>> distanceMatrix;
     AIPredictionModel aiModel;
+    string lastSavedFilePath;
     
     // Private constructor for singleton
     WasteLocationManager() {
         // Initialize with empty locations
+        lastSavedFilePath = "waste_data.dat";
     }
     
     static WasteLocationManager* instance;
@@ -637,6 +639,232 @@ public:
         catch (const exception& e) {
             UIHelper::displayError("Unexpected error while saving file: " + string(e.what()));
         }
+    }
+    
+    // Save all data to a binary file
+    bool saveAllData(const string& filename = "") {
+        string saveFile = filename.empty() ? lastSavedFilePath : filename;
+        
+        try {
+            ofstream outFile(saveFile, ios::binary);
+            if (!outFile) {
+                throw FileOperationException("open", saveFile);
+            }
+
+            UIHelper::displayProgressBar(0);
+            cout << "Saving data to " << saveFile << "..." << endl;
+            
+            // Save number of locations
+            int numLocations = locations.size();
+            outFile.write(reinterpret_cast<char*>(&numLocations), sizeof(numLocations));
+            UIHelper::displayProgressBar(10);
+            
+            // Save each location's data
+            for (size_t i = 0; i < locations.size(); i++) {
+                // Save location name
+                string name = locations[i].getName();
+                int nameLength = name.length();
+                outFile.write(reinterpret_cast<char*>(&nameLength), sizeof(nameLength));
+                outFile.write(name.c_str(), nameLength);
+                
+                // Save waste level and collection status
+                int wasteLevel = locations[i].getWasteLevel();
+                bool isCollected = locations[i].getIsCollected();
+                outFile.write(reinterpret_cast<char*>(&wasteLevel), sizeof(wasteLevel));
+                outFile.write(reinterpret_cast<char*>(&isCollected), sizeof(isCollected));
+                
+                // Save historical data
+                const vector<pair<int, double>>& history = locations[i].getHistoricalData();
+                int historySize = history.size();
+                outFile.write(reinterpret_cast<char*>(&historySize), sizeof(historySize));
+                
+                for (const auto& point : history) {
+                    outFile.write(reinterpret_cast<const char*>(&point.first), sizeof(point.first));
+                    outFile.write(reinterpret_cast<const char*>(&point.second), sizeof(point.second));
+                }
+                
+                UIHelper::displayProgressBar(10 + (i * 40 / locations.size()));
+            }
+            
+            // Save distance matrix
+            int rows = distanceMatrix.size();
+            outFile.write(reinterpret_cast<char*>(&rows), sizeof(rows));
+            
+            for (size_t i = 0; i < distanceMatrix.size(); i++) {
+                int cols = distanceMatrix[i].size();
+                outFile.write(reinterpret_cast<char*>(&cols), sizeof(cols));
+                
+                for (int j = 0; j < cols; j++) {
+                    outFile.write(reinterpret_cast<char*>(&distanceMatrix[i][j]), sizeof(int));
+                }
+                
+                UIHelper::displayProgressBar(50 + (i * 50 / rows));
+            }
+            
+            outFile.close();
+            UIHelper::displayProgressBar(100);
+            cout << endl;
+            
+            if (!outFile.good()) {
+                throw FileOperationException("write", saveFile);
+            }
+            
+            // Save the file path for future reference
+            lastSavedFilePath = saveFile;
+            UIHelper::displaySuccess("Data saved successfully to " + saveFile);
+            return true;
+        }
+        catch (const FileOperationException& e) {
+            UIHelper::displayError(e.what());
+            return false;
+        }
+        catch (const exception& e) {
+            UIHelper::displayError("Unexpected error while saving data: " + string(e.what()));
+            return false;
+        }
+    }
+    
+    // Load data from a binary file
+    bool loadAllData(const string& filename = "") {
+        string loadFile = filename.empty() ? lastSavedFilePath : filename;
+        
+        try {
+            ifstream inFile(loadFile, ios::binary);
+            if (!inFile) {
+                throw FileOperationException("open", loadFile);
+            }
+            
+            cout << "Loading data from " << loadFile << "..." << endl;
+            UIHelper::displayProgressBar(0);
+            
+            // Clear existing data
+            locations.clear();
+            distanceMatrix.clear();
+            
+            // Read number of locations
+            int numLocations;
+            inFile.read(reinterpret_cast<char*>(&numLocations), sizeof(numLocations));
+            UIHelper::displayProgressBar(10);
+            
+            // Read each location's data
+            for (int i = 0; i < numLocations; i++) {
+                // Read location name
+                int nameLength;
+                inFile.read(reinterpret_cast<char*>(&nameLength), sizeof(nameLength));
+                
+                string name(nameLength, ' ');
+                inFile.read(&name[0], nameLength);
+                
+                // Read waste level and collection status
+                int wasteLevel;
+                bool isCollected;
+                inFile.read(reinterpret_cast<char*>(&wasteLevel), sizeof(wasteLevel));
+                inFile.read(reinterpret_cast<char*>(&isCollected), sizeof(isCollected));
+                
+                // Create location object
+                WasteLocation location(name, wasteLevel);
+                location.setIsCollected(isCollected);
+                
+                // Read historical data
+                int historySize;
+                inFile.read(reinterpret_cast<char*>(&historySize), sizeof(historySize));
+                
+                for (int j = 0; j < historySize; j++) {
+                    int timestamp;
+                    double level;
+                    inFile.read(reinterpret_cast<char*>(&timestamp), sizeof(timestamp));
+                    inFile.read(reinterpret_cast<char*>(&level), sizeof(level));
+                    
+                    location.addHistoricalDataPoint(timestamp, level);
+                }
+                
+                // Add location to the vector
+                locations.push_back(location);
+                
+                UIHelper::displayProgressBar(10 + (i * 40 / numLocations));
+            }
+            
+            // Read distance matrix
+            int rows;
+            inFile.read(reinterpret_cast<char*>(&rows), sizeof(rows));
+            distanceMatrix.resize(rows);
+            
+            for (int i = 0; i < rows; i++) {
+                int cols;
+                inFile.read(reinterpret_cast<char*>(&cols), sizeof(cols));
+                distanceMatrix[i].resize(cols);
+                
+                for (int j = 0; j < cols; j++) {
+                    inFile.read(reinterpret_cast<char*>(&distanceMatrix[i][j]), sizeof(int));
+                }
+                
+                UIHelper::displayProgressBar(50 + (i * 50 / rows));
+            }
+            
+            inFile.close();
+            UIHelper::displayProgressBar(100);
+            cout << endl;
+            
+            // Save the file path for future reference
+            lastSavedFilePath = loadFile;
+            UIHelper::displaySuccess("Data loaded successfully from " + loadFile);
+            return true;
+        }
+        catch (const FileOperationException& e) {
+            UIHelper::displayError(e.what());
+            
+            // If loading fails, initialize with default data
+            initializeLocations();
+            generateRandomWasteLevels();
+            return false;
+        }
+        catch (const exception& e) {
+            UIHelper::displayError("Unexpected error while loading data: " + string(e.what()));
+            
+            // If loading fails, initialize with default data
+            initializeLocations();
+            generateRandomWasteLevels();
+            return false;
+        }
+    }
+    
+    // Delete saved data file
+    bool deleteDataFile(const string& filename = "") {
+        string deleteFile = filename.empty() ? lastSavedFilePath : filename;
+        
+        try {
+            if (remove(deleteFile.c_str()) != 0) {
+                throw FileOperationException("delete", deleteFile);
+            }
+            
+            UIHelper::displaySuccess("Data file deleted successfully: " + deleteFile);
+            return true;
+        }
+        catch (const FileOperationException& e) {
+            UIHelper::displayError(e.what());
+            return false;
+        }
+        catch (const exception& e) {
+            UIHelper::displayError("Unexpected error while deleting data file: " + string(e.what()));
+            return false;
+        }
+    }
+    
+    // Check if a data file exists
+    bool dataFileExists(const string& filename = "") {
+        string checkFile = filename.empty() ? lastSavedFilePath : filename;
+        ifstream file(checkFile);
+        return file.good();
+    }
+    
+    // Get the last saved file path
+    string getLastSavedFilePath() const {
+        return lastSavedFilePath;
+    }
+    
+    // Set the last saved file path
+    void setLastSavedFilePath(const string& filePath) {
+        lastSavedFilePath = filePath;
     }
     
     AIPredictionModel& getAIModel() {
@@ -1560,6 +1788,9 @@ private:
         cout << "7. Compare Route Costs" << endl;
         cout << "8. Waste Pattern Analytics Dashboard" << endl;
         cout << "9. Help" << endl;
+        cout << "10. Save All Data" << endl;
+        cout << "11. Load Data" << endl;
+        cout << "12. Delete Saved Data" << endl;
         cout << "0. Exit" << endl;
         cout << "\nCurrent Route Algorithm: " << getCurrentRouteAlgorithm() << endl;
         cout << "\nEnter your choice: ";
@@ -1778,6 +2009,26 @@ private:
         setTextColor(COLOR_WHITE);
         
         cout << "\n9. Help: Display this help information" << endl;
+        
+        cout << "\n10. Save All Data:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Saves all current waste data, including locations, waste levels," << endl;
+        cout << "   historical data, and distance matrix to a binary file." << endl;
+        cout << "   This allows you to restore your data when restarting the application." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n11. Load Data:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Loads previously saved waste data from a binary file." << endl;
+        cout << "   This restores all locations, waste levels, historical data, and distances." << endl;
+        setTextColor(COLOR_WHITE);
+        
+        cout << "\n12. Delete Saved Data:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Permanently deletes a saved data file." << endl;
+        cout << "   Use with caution as this operation cannot be undone." << endl;
+        setTextColor(COLOR_WHITE);
+        
         cout << "\n0. Exit: Close the application" << endl;
         
         setTextColor(COLOR_GREEN);
@@ -1786,6 +2037,7 @@ private:
         cout << "- Cost calculations include both fuel (RM 2.50/km) and driver wages (RM 10.00/hour)" << endl;
         cout << "- Anomalies are detected when waste levels deviate significantly from historical trends" << endl;
         cout << "- All routes begin and end at the Waste Collector HQ" << endl;
+        cout << "- Your data is saved to 'waste_data.dat' by default" << endl;
         setTextColor(COLOR_WHITE);
         
         cout << "\nPress any key to return to the main menu...";
@@ -1797,6 +2049,177 @@ private:
         char response;
         cin >> response;
         return (response == 'y' || response == 'Y');
+    }
+
+    // Data persistence methods
+    void saveData() {
+        system("cls");
+        displayHeader();
+        
+        cout << "\nSave Data Options:" << endl;
+        cout << "1. Save to default file (" << locationManager->getLastSavedFilePath() << ")" << endl;
+        cout << "2. Save to a custom file" << endl;
+        cout << "3. Return to main menu" << endl;
+        cout << "\nEnter your choice: ";
+        
+        int choice;
+        cin >> choice;
+        
+        switch (choice) {
+            case 1: {
+                // Save to default file
+                bool success = locationManager->saveAllData();
+                if (success) {
+                    cout << "\nData saved successfully to " << locationManager->getLastSavedFilePath() << endl;
+                }
+                system("pause");
+                break;
+            }
+            case 2: {
+                // Save to custom file
+                string filename;
+                cout << "Enter the filename to save to (e.g., mydata.dat): ";
+                cin >> filename;
+                
+                bool success = locationManager->saveAllData(filename);
+                if (success) {
+                    cout << "\nData saved successfully to " << filename << endl;
+                }
+                system("pause");
+                break;
+            }
+            case 3:
+                // Return to main menu
+                break;
+            default:
+                cout << "Invalid choice. Please try again." << endl;
+                system("pause");
+                break;
+        }
+    }
+    
+    void loadData() {
+        system("cls");
+        displayHeader();
+        
+        cout << "\nLoad Data Options:" << endl;
+        cout << "1. Load from default file (" << locationManager->getLastSavedFilePath() << ")" << endl;
+        cout << "2. Load from a custom file" << endl;
+        cout << "3. Return to main menu" << endl;
+        cout << "\nEnter your choice: ";
+        
+        int choice;
+        cin >> choice;
+        
+        switch (choice) {
+            case 1: {
+                // Load from default file
+                if (!locationManager->dataFileExists()) {
+                    cout << "\nNo data file found at " << locationManager->getLastSavedFilePath() << endl;
+                    system("pause");
+                    break;
+                }
+                
+                if (confirmAction("This will overwrite current data. Continue?")) {
+                    bool success = locationManager->loadAllData();
+                    if (success) {
+                        cout << "\nData loaded successfully from " << locationManager->getLastSavedFilePath() << endl;
+                    }
+                }
+                system("pause");
+                break;
+            }
+            case 2: {
+                // Load from custom file
+                string filename;
+                cout << "Enter the filename to load from (e.g., mydata.dat): ";
+                cin >> filename;
+                
+                if (!locationManager->dataFileExists(filename)) {
+                    cout << "\nNo data file found at " << filename << endl;
+                    system("pause");
+                    break;
+                }
+                
+                if (confirmAction("This will overwrite current data. Continue?")) {
+                    bool success = locationManager->loadAllData(filename);
+                    if (success) {
+                        cout << "\nData loaded successfully from " << filename << endl;
+                    }
+                }
+                system("pause");
+                break;
+            }
+            case 3:
+                // Return to main menu
+                break;
+            default:
+                cout << "Invalid choice. Please try again." << endl;
+                system("pause");
+                break;
+        }
+    }
+    
+    void deleteData() {
+        system("cls");
+        displayHeader();
+        
+        cout << "\nDelete Data Options:" << endl;
+        cout << "1. Delete default file (" << locationManager->getLastSavedFilePath() << ")" << endl;
+        cout << "2. Delete a custom file" << endl;
+        cout << "3. Return to main menu" << endl;
+        cout << "\nEnter your choice: ";
+        
+        int choice;
+        cin >> choice;
+        
+        switch (choice) {
+            case 1: {
+                // Delete default file
+                if (!locationManager->dataFileExists()) {
+                    cout << "\nNo data file found at " << locationManager->getLastSavedFilePath() << endl;
+                    system("pause");
+                    break;
+                }
+                
+                if (confirmAction("Are you sure you want to delete this file? This cannot be undone.")) {
+                    bool success = locationManager->deleteDataFile();
+                    if (success) {
+                        cout << "\nData file deleted successfully" << endl;
+                    }
+                }
+                system("pause");
+                break;
+            }
+            case 2: {
+                // Delete custom file
+                string filename;
+                cout << "Enter the filename to delete (e.g., mydata.dat): ";
+                cin >> filename;
+                
+                if (!locationManager->dataFileExists(filename)) {
+                    cout << "\nNo data file found at " << filename << endl;
+                    system("pause");
+                    break;
+                }
+                
+                if (confirmAction("Are you sure you want to delete this file? This cannot be undone.")) {
+                    bool success = locationManager->deleteDataFile(filename);
+                    if (success) {
+                        cout << "\nData file deleted successfully" << endl;
+                    }
+                }
+                system("pause");
+                break;
+            }
+            case 3:
+                // Return to main menu
+                break;
+            default:
+                cout << "Invalid choice. Please try again." << endl;
+                system("pause");
+                break;
+        }
     }
 
     // Add this to the private section of WasteManagementSystem class
@@ -2291,8 +2714,21 @@ private:
 public:
     WasteManagementSystem() : currentRoute(0) {
         locationManager = WasteLocationManager::getInstance();
-        locationManager->initializeLocations();
-        locationManager->generateRandomWasteLevels();
+        
+        // Try to load saved data, if available
+        if (locationManager->dataFileExists()) {
+            if (locationManager->loadAllData()) {
+                cout << "Loaded saved data from " << locationManager->getLastSavedFilePath() << endl;
+            } else {
+                // If loading fails, initialize with default data
+                locationManager->initializeLocations();
+                locationManager->generateRandomWasteLevels();
+            }
+        } else {
+            // If no saved data exists, initialize with default data
+            locationManager->initializeLocations();
+            locationManager->generateRandomWasteLevels();
+        }
         
         // Set default route strategy
         route.setStrategy(make_shared<NonOptimizedRoute>());
@@ -2335,12 +2771,17 @@ public:
                         cout << "Please select a route algorithm first." << endl;
                     } else {
                         try {
-                            RouteResults results = route.executeRoute(locationManager);
-                            // Store the results for comparison
-                            routeResults[getCurrentRouteAlgorithm()] = results;
+                            // Execute the route and save results
+                            RouteResults result = route.executeRoute(locationManager);
                             
-                            // Add the ASCII map visualization
-                            visualizeRouteMap(results, locationManager);
+                            // Visualize route with ASCII graphics
+                            visualizeRoute(result, locationManager);
+                            
+                            // Store route results for comparison
+                            routeResults[getCurrentRouteAlgorithm()] = result;
+                            
+                            // Visualize the route on a map
+                            visualizeRouteMap(result, locationManager);
                         } catch (const InvalidRouteException& e) {
                             cout << "Error: " << e.what() << endl;
                         }
@@ -2369,9 +2810,25 @@ public:
                 case 9:
                     showHelp();
                     break;
+                
+                case 10:
+                    saveData();
+                    break;
+                    
+                case 11:
+                    loadData();
+                    break;
+                    
+                case 12:
+                    deleteData();
+                    break;
 
                 case 0:
                     if (confirmAction("Are you sure you want to exit?")) {
+                        // Ask to save before exit
+                        if (confirmAction("Do you want to save your data before exiting?")) {
+                            locationManager->saveAllData();
+                        }
                         running = false;
                     }
                     break;
