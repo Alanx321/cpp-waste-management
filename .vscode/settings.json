@@ -124,6 +124,8 @@
     "ratio": "cpp",
     "regex": "cpp",
     "stop_token": "cpp",
-    "thread": "cpp"
+    "thread": "cpp",
+    "blabla": "cpp",
+    "sstream": "cpp"
   }
 }

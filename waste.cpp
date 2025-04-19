@@ -49,6 +49,7 @@ class MSTRoute;              // Minimum Spanning Tree based route for efficient 
 class RLRoute;               // Reinforcement Learning route with adaptive optimization
 class AIPredictionModel;     // Machine learning model for waste trend analysis and forecasting
 class WasteLocationManager;  // Singleton manager for location data with persistence support
+class ExternalFactorsRoute; // AI-based route optimization considering external factors
 
 // Complete definition of RouteResults struct
 // Container for route calculation outcomes, used for cost analysis,
@@ -469,22 +470,22 @@ public:
     static void displayCostComparison(const map<string, RouteResults>& routeResults) {
         cout << "\nRoute Cost Comparison:" << endl;
         cout << "====================================================================" << endl;
-        cout << left << setw(30) << "Route Type" 
-             << setw(15) << "Distance (km)" 
-             << setw(15) << "Time (h)" 
-             << setw(15) << "Fuel (RM)" 
-             << setw(15) << "Wages (RM)" 
-             << setw(15) << "Total (RM)" << endl;
+        cout << left << setw(35) << "Route Type" 
+             << setw(20) << "Distance (km)" 
+             << setw(20) << "Time (h)" 
+             << setw(20) << "Fuel (RM)" 
+             << setw(20) << "Wages (RM)" 
+             << setw(20) << "Total (RM)" << endl;
         cout << string(105, '-') << endl;
         
         for (const auto& route : routeResults) {
             double totalCost = route.second.totalFuel + route.second.totalWage;
-            cout << left << setw(30) << route.first
-                 << setw(15) << route.second.totalDistance
-                 << setw(15) << fixed << setprecision(2) << (route.second.totalTime / 60)
-                 << setw(15) << fixed << setprecision(2) << route.second.totalFuel
-                 << setw(15) << fixed << setprecision(2) << route.second.totalWage
-                 << setw(15) << fixed << setprecision(2) << totalCost << endl;
+            cout << left << setw(35) << route.first
+                 << setw(20) << route.second.totalDistance
+                 << setw(20) << fixed << setprecision(2) << (route.second.totalTime / 60)
+                 << setw(20) << fixed << setprecision(2) << route.second.totalFuel
+                 << setw(20) << fixed << setprecision(2) << route.second.totalWage
+                 << setw(20) << fixed << setprecision(2) << totalCost << endl;
         }
         
         cout << "====================================================================" << endl;
@@ -1973,6 +1974,557 @@ private:
 };
 
 /**
+ * @class ExternalFactorsRoute
+ * 
+ * @brief A class that implements the RouteStrategy interface using AI to optimize routes based on external factors.
+ * 
+ * The ExternalFactorsRoute class extends the RouteStrategy class and provides an implementation
+ * for calculating routes optimized for external factors such as weather conditions, traffic patterns,
+ * time of day, and seasonal variations. This strategy uses machine learning techniques to predict
+ * the optimal route considering both waste collection needs and environmental/situational factors.
+ * 
+ * External factors include:
+ * - Weather conditions (rain, snow, extreme temperatures)
+ * - Traffic patterns and congestion forecasts
+ * - Time of day optimization (rush hours vs off-peak)
+ * - Seasonal adjustments (tourist seasons, holidays)
+ * - Road conditions and maintenance schedules
+ * 
+ * The class improves overall efficiency by dynamically adjusting routes based on these factors,
+ * resulting in fuel savings, reduced emissions, and improved service reliability.
+ */
+// Concrete strategy: External Factors AI-based Route
+class ExternalFactorsRoute : public RouteStrategy {
+private:
+    // Constants for external factor weights
+    const double WEATHER_WEIGHT = 0.2;
+    const double TRAFFIC_WEIGHT = 0.3;
+    const double TIME_OF_DAY_WEIGHT = 0.25;
+    const double SEASONAL_WEIGHT = 0.15;
+    const double ROAD_CONDITION_WEIGHT = 0.1;
+    
+    // Weather condition factors (0-1 scale, higher means worse)
+    double weatherFactor;
+    // Traffic congestion factors (0-1 scale, higher means worse)
+    double trafficFactor;
+    // Time of day factors (0-1 scale, higher means worse)
+    double timeOfDayFactor;
+    // Seasonal factors (0-1 scale, higher means worse)
+    double seasonalFactor;
+    // Road condition factors (0-1 scale, higher means worse)
+    double roadConditionFactor;
+    
+    // Database of historical external factors data
+    unordered_map<string, vector<double>> historicalData;
+    
+    // Neural network weights for location predictions
+    vector<vector<double>> neuralNetWeights;
+    
+    // Cached optimal paths for specific conditions
+    unordered_map<string, vector<int>> pathCache;
+    
+    // ML-based road segment prediction model
+    vector<double> segmentPredictions;
+    
+    // Method to get current weather conditions (simulated)
+    double getCurrentWeatherFactor() const {
+        // In a real implementation, this would connect to a weather API
+        // For demonstration, generate random weather factor or use historical pattern
+        time_t now = time(nullptr);
+        tm* ltm = localtime(&now);
+        
+        // Simulate seasonal weather patterns - worse in winter months
+        if (ltm->tm_mon >= 10 || ltm->tm_mon <= 2) { // November to March
+            return 0.6 + ((rand() % 40) / 100.0); // 0.6-1.0 (worse weather)
+        } else if (ltm->tm_mon >= 3 && ltm->tm_mon <= 5) { // April to June
+            return 0.3 + ((rand() % 40) / 100.0); // 0.3-0.7 (moderate)
+        } else {
+            return 0.1 + ((rand() % 30) / 100.0); // 0.1-0.4 (better weather)
+        }
+    }
+    
+    // Method to get current traffic conditions (simulated)
+    double getCurrentTrafficFactor() const {
+        // In a real implementation, this would connect to a traffic API
+        // For demonstration, simulate traffic based on time of day
+        time_t now = time(nullptr);
+        tm* ltm = localtime(&now);
+        int hour = ltm->tm_hour;
+        
+        // Simulate rush hour traffic patterns
+        if ((hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 18)) {
+            return 0.7 + ((rand() % 30) / 100.0); // 0.7-1.0 (heavy traffic)
+        } else if ((hour >= 10 && hour <= 15) || (hour >= 19 && hour <= 21)) {
+            return 0.3 + ((rand() % 40) / 100.0); // 0.3-0.7 (moderate traffic)
+        } else {
+            return 0.1 + ((rand() % 30) / 100.0); // 0.1-0.4 (light traffic)
+        }
+    }
+    
+    // Method to get time of day factor
+    double getTimeOfDayFactor() const {
+        // Optimize for time of day - prefer working during daylight and non-rush hours
+        time_t now = time(nullptr);
+        tm* ltm = localtime(&now);
+        int hour = ltm->tm_hour;
+        
+        // Avoid very early morning, rush hours, and late night
+        if (hour < 5 || hour >= 22) {
+            return 0.8; // Late night/early morning (challenging)
+        } else if ((hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 18)) {
+            return 0.7; // Rush hours (avoid)
+        } else if (hour >= 10 && hour <= 15) {
+            return 0.2; // Midday (ideal)
+        } else {
+            return 0.5; // Early evening (acceptable)
+        }
+    }
+    
+    // Method to get seasonal factor
+    double getSeasonalFactor() const {
+        // Account for seasonal variations
+        time_t now = time(nullptr);
+        tm* ltm = localtime(&now);
+        int month = ltm->tm_mon;
+        int day = ltm->tm_mday;
+        
+        // Holiday season (December)
+        if (month == 11) {
+            return 0.7; // Holiday congestion
+        }
+        // Summer tourist season
+        else if (month >= 5 && month <= 8) {
+            return 0.6; // Tourist congestion
+        }
+        // Special holidays (simplified)
+        else if ((month == 0 && day == 1) || // New Year
+                (month == 4 && day >= 29 && day <= 31) || // Labor Day
+                (month == 6 && day == 4) || // Independence Day
+                (month == 10 && (day >= 22 && day <= 28))) { // Thanksgiving
+            return 0.8; // Holiday congestion
+        } else {
+            return 0.3; // Normal conditions
+        }
+    }
+    
+    // Method to get road condition factor (simulated)
+    double getRoadConditionFactor() const {
+        // In a real implementation, this would connect to a road condition API
+        // For demonstration, simulate based on weather and season
+        double weatherEffect = getCurrentWeatherFactor();
+        double seasonEffect = getSeasonalFactor();
+        
+        // Combine weather and seasonal effects with some randomness
+        return (weatherEffect * 0.6) + (seasonEffect * 0.3) + ((rand() % 20) / 100.0);
+    }
+    
+    // Calculate the external factor adjusted distance
+    int getAdjustedDistance(int actualDistance, int fromLocation, int toLocation) const {
+        // Combine all external factors into a single multiplier
+        double combinedFactor = (weatherFactor * WEATHER_WEIGHT) +
+                               (trafficFactor * TRAFFIC_WEIGHT) +
+                               (timeOfDayFactor * TIME_OF_DAY_WEIGHT) +
+                               (seasonalFactor * SEASONAL_WEIGHT) +
+                               (roadConditionFactor * ROAD_CONDITION_WEIGHT);
+        
+        // Apply neural network prediction model (simplified version)
+        double locationEffect = 1.0;
+        if (!neuralNetWeights.empty() && fromLocation < neuralNetWeights.size() && 
+            toLocation < neuralNetWeights[fromLocation].size()) {
+            locationEffect = neuralNetWeights[fromLocation][toLocation];
+        }
+        
+        // Calculate adjusted distance - worse conditions = longer effective distance
+        double adjustmentFactor = 1.0 + (combinedFactor * locationEffect);
+        return static_cast<int>(actualDistance * adjustmentFactor);
+    }
+    
+    // Initialize the neural network weights for location-specific effects
+    void initializeNeuralNetwork(int numLocations) {
+        // Create a matrix of weights for each location pair
+        neuralNetWeights.resize(numLocations);
+        
+        for (int i = 0; i < numLocations; i++) {
+            neuralNetWeights[i].resize(numLocations);
+            for (int j = 0; j < numLocations; j++) {
+                if (i == j) {
+                    neuralNetWeights[i][j] = 0.0; // No effect for same location
+                } else {
+                    // Initialize with random weights between 0.8 and 1.2
+                    // In a real implementation, these would be trained on historical data
+                    neuralNetWeights[i][j] = 0.8 + ((rand() % 40) / 100.0);
+                }
+            }
+        }
+    }
+    
+    // Generate a cache key for current conditions
+    string generateConditionKey() const {
+        // Create a key based on discretized environmental factors
+        string key = to_string(static_cast<int>(weatherFactor * 10)) + "_" +
+                    to_string(static_cast<int>(trafficFactor * 10)) + "_" +
+                    to_string(static_cast<int>(timeOfDayFactor * 10)) + "_" +
+                    to_string(static_cast<int>(seasonalFactor * 10)) + "_" +
+                    to_string(static_cast<int>(roadConditionFactor * 10));
+        return key;
+    }
+    
+    // Method to apply machine learning optimization to the route
+    vector<int> optimizeRoute(const vector<int>& candidateLocations, 
+                              WasteLocationManager* manager, 
+                              const vector<WasteLocation>& locations) {
+        // Check if we have a cached result for these conditions
+        string conditionKey = generateConditionKey();
+        if (pathCache.find(conditionKey) != pathCache.end()) {
+            return pathCache[conditionKey];
+        }
+        
+        // Create a distance matrix with adjusted distances based on external factors
+        int n = candidateLocations.size();
+        vector<vector<int>> adjustedDistMatrix(n, vector<int>(n, 0));
+        
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                int actualDistance = manager->getDistance(
+                    candidateLocations[i], candidateLocations[j]);
+                
+                adjustedDistMatrix[i][j] = getAdjustedDistance(
+                    actualDistance, candidateLocations[i], candidateLocations[j]);
+            }
+        }
+        
+        // Apply a hybrid optimization algorithm combining aspects of TSP and greedy approaches
+        // with adaptations for external factors
+        
+        // Start with HQ (index 0)
+        vector<int> optimizedPath;
+        optimizedPath.push_back(candidateLocations[0]);
+        
+        // Track visited locations
+        vector<bool> visited(n, false);
+        visited[0] = true;
+        
+        int currentPos = 0; // Start at first location (HQ)
+        int remainingLocations = n - 1;
+        
+        // Apply a greedy approach with look-ahead and consideration of waste levels
+        while (remainingLocations > 0) {
+            int bestNextLocation = -1;
+            double bestScore = -1.0;
+            
+            // Evaluate each unvisited location
+            for (int i = 1; i < n; i++) {
+                if (!visited[i]) {
+                    int locationIndex = candidateLocations[i];
+                    
+                    // Calculate a score based on:
+                    // 1. Adjusted distance (lower is better)
+                    // 2. Waste level (higher is better)
+                    // 3. Look-ahead potential (evaluate potential next stops)
+                    
+                    double distanceScore = 1000.0 / (1.0 + adjustedDistMatrix[currentPos][i]);
+                    double wasteScore = locations[locationIndex].getWasteLevel() * 10;
+                    
+                    // Look-ahead: evaluate potential next locations after this one
+                    double lookAheadScore = 0.0;
+                    int lookAheadCount = 0;
+                    
+                    for (int j = 1; j < n; j++) {
+                        if (!visited[j] && j != i) {
+                            // Add a small score component based on proximity of next potential locations
+                            lookAheadScore += 500.0 / (1.0 + adjustedDistMatrix[i][j]);
+                            lookAheadCount++;
+                            
+                            // Limit look-ahead to 3 locations for performance
+                            if (lookAheadCount >= 3) break;
+                        }
+                    }
+                    
+                    // Normalize look-ahead score
+                    if (lookAheadCount > 0) {
+                        lookAheadScore /= lookAheadCount;
+                    }
+                    
+                    // Combined score with weights
+                    double score = (distanceScore * 0.5) + (wasteScore * 0.3) + (lookAheadScore * 0.2);
+                    
+                    // Update best location if this is better
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestNextLocation = i;
+                    }
+                }
+            }
+            
+            // Add the best location to the path
+            if (bestNextLocation != -1) {
+                optimizedPath.push_back(candidateLocations[bestNextLocation]);
+                visited[bestNextLocation] = true;
+                currentPos = bestNextLocation;
+                remainingLocations--;
+            } else {
+                // Fallback - shouldn't happen with complete graph
+                break;
+            }
+        }
+        
+        // Return to HQ
+        optimizedPath.push_back(candidateLocations[0]);
+        
+        // Cache the result
+        pathCache[conditionKey] = optimizedPath;
+        
+        return optimizedPath;
+    }
+    
+    // Save and report environmental impact information
+    void saveEnvironmentalImpact(const string& filename, const RouteResults& results,
+                                 WasteLocationManager* manager) {
+        ofstream outFile(filename);
+        
+        if (!outFile) {
+            cerr << "Cannot open file: " << filename << endl;
+            return;
+        }
+        
+        // Calculate environmental impact metrics
+        double fuelSaved = calculateFuelSavings(results);
+        double carbonReduction = fuelSaved * 2.3; // kg CO2 per liter of fuel
+        double timeReduction = calculateTimeReduction(results);
+        
+        outFile << "Environmental Impact Report\n";
+        outFile << "===================================\n\n";
+        
+        outFile << "External Factors Analysis:\n";
+        outFile << "- Weather Condition Factor: " << fixed << setprecision(2) << weatherFactor 
+                << " (Weight: " << WEATHER_WEIGHT << ")\n";
+        outFile << "- Traffic Congestion Factor: " << trafficFactor 
+                << " (Weight: " << TRAFFIC_WEIGHT << ")\n";
+        outFile << "- Time of Day Factor: " << timeOfDayFactor 
+                << " (Weight: " << TIME_OF_DAY_WEIGHT << ")\n";
+        outFile << "- Seasonal Factor: " << seasonalFactor 
+                << " (Weight: " << SEASONAL_WEIGHT << ")\n";
+        outFile << "- Road Condition Factor: " << roadConditionFactor 
+                << " (Weight: " << ROAD_CONDITION_WEIGHT << ")\n\n";
+        
+        outFile << "Optimization Benefits:\n";
+        outFile << "- Estimated Fuel Savings: " << fixed << setprecision(2) << fuelSaved << " liters\n";
+        outFile << "- Estimated Carbon Reduction: " << carbonReduction << " kg CO2\n";
+        outFile << "- Estimated Time Savings: " << timeReduction << " minutes\n\n";
+        
+        outFile << "Recommendations:\n";
+        if (weatherFactor > 0.6) {
+            outFile << "- Consider rescheduling non-urgent collections due to adverse weather\n";
+        }
+        if (trafficFactor > 0.7) {
+            outFile << "- Consider adjusting collection time to avoid peak traffic periods\n";
+        }
+        if (timeOfDayFactor > 0.6) {
+            outFile << "- Recommended time window adjustment to optimize daylight operations\n";
+        }
+        
+        outFile.close();
+    }
+    
+    // Calculate approximate fuel savings compared to non-optimized route
+    double calculateFuelSavings(const RouteResults& results) const {
+        // Calculate baseline fuel usage (non-optimized)
+        vector<WasteLocation> locations;
+        double baselineFuel = results.totalDistance * 0.15; // Liters per km (approximate)
+        
+        // Estimate savings based on optimization factors
+        double optimizationEffect = 1.0 - ((weatherFactor * WEATHER_WEIGHT) +
+                                         (trafficFactor * TRAFFIC_WEIGHT) +
+                                         (timeOfDayFactor * TIME_OF_DAY_WEIGHT));
+        
+        // Calculate savings (10-25% depending on optimization)
+        double savingsRate = 0.10 + (optimizationEffect * 0.15);
+        return baselineFuel * savingsRate;
+    }
+    
+    // Calculate approximate time savings
+    double calculateTimeReduction(const RouteResults& results) const {
+        // Baseline time (minutes)
+        double baselineTime = results.totalTime;
+        
+        // Estimate time savings based on optimization factors, especially traffic
+        double trafficEffect = 1.0 - (trafficFactor * 0.8);
+        double timeEffect = 1.0 - (timeOfDayFactor * 0.5);
+        
+        // Calculate time savings rate (5-30% depending on factors)
+        double savingsRate = 0.05 + (trafficEffect * 0.15) + (timeEffect * 0.10);
+        
+        return baselineTime * savingsRate;
+    }
+    
+    // Load historical external factor data (or initialize if none exists)
+    void loadHistoricalData() {
+        ifstream inFile("external_factors_history.dat");
+        
+        if (inFile) {
+            string locationName;
+            double weather, traffic, timeOfDay, seasonal, road;
+            
+            while (inFile >> locationName >> weather >> traffic >> timeOfDay >> seasonal >> road) {
+                vector<double> factors = {weather, traffic, timeOfDay, seasonal, road};
+                historicalData[locationName] = factors;
+            }
+        } else {
+            // Initialize with default values if no file exists
+            historicalData.clear();
+        }
+    }
+    
+    // Save current external factors to historical data
+    void updateHistoricalData(const vector<WasteLocation>& locations) {
+        // Update the historical data with current values
+        for (const auto& location : locations) {
+            string name = location.getName();
+            vector<double> factors = {weatherFactor, trafficFactor, timeOfDayFactor, 
+                                    seasonalFactor, roadConditionFactor};
+            historicalData[name] = factors;
+        }
+        
+        // Save to file
+        ofstream outFile("external_factors_history.dat");
+        
+        if (outFile) {
+            for (const auto& entry : historicalData) {
+                outFile << entry.first;
+                for (double factor : entry.second) {
+                    outFile << " " << factor;
+                }
+                outFile << endl;
+            }
+        }
+    }
+
+public:
+    ExternalFactorsRoute() {
+        // Initialize factors with current conditions
+        weatherFactor = getCurrentWeatherFactor();
+        trafficFactor = getCurrentTrafficFactor();
+        timeOfDayFactor = getTimeOfDayFactor();
+        seasonalFactor = getSeasonalFactor();
+        roadConditionFactor = getRoadConditionFactor();
+        
+        // Load historical data
+        loadHistoricalData();
+        
+        // Initialize path cache
+        pathCache.clear();
+    }
+    
+    ~ExternalFactorsRoute() {
+        // Save historical data when destroyed
+        if (!historicalData.empty()) {
+            ofstream outFile("external_factors_history.dat");
+            if (outFile) {
+                for (const auto& entry : historicalData) {
+                    outFile << entry.first;
+                    for (double factor : entry.second) {
+                        outFile << " " << factor;
+                    }
+                    outFile << endl;
+                }
+            }
+        }
+    }
+    
+    RouteResults calculateRoute(WasteLocationManager* manager) override {
+        RouteResults results;
+        results.totalDistance = 0;
+        results.totalTime = 0;
+        results.totalFuel = 0;
+        results.totalWage = 0;
+        
+        vector<WasteLocation>& locations = manager->getLocations();
+        
+        // Update the external factors based on current time and conditions
+        weatherFactor = getCurrentWeatherFactor();
+        trafficFactor = getCurrentTrafficFactor();
+        timeOfDayFactor = getTimeOfDayFactor();
+        seasonalFactor = getSeasonalFactor();
+        roadConditionFactor = getRoadConditionFactor();
+        
+        // Initialize neural network if not already done
+        if (neuralNetWeights.empty()) {
+            initializeNeuralNetwork(locations.size());
+        }
+        
+        // Create a list of locations to visit based on waste levels
+        // Criteria: waste level >= 25% (like TSP, but with external factor optimization)
+        vector<int> locationsToVisit;
+        locationsToVisit.push_back(0); // Add HQ
+        
+        for (size_t i = 1; i < locations.size(); ++i) {
+            if (locations[i].getWasteLevel() >= 25) {
+                locationsToVisit.push_back(i);
+            }
+        }
+        
+        // If only HQ exists in the list, no locations to visit
+        if (locationsToVisit.size() <= 1) {
+            results.path.clear();
+            return results;
+        }
+        
+        // Apply the optimization algorithm to get the optimal path
+        vector<int> optimizedPath = optimizeRoute(locationsToVisit, manager, locations);
+        
+        // Set the results path based on the optimized path
+        results.path = optimizedPath;
+        
+        // Calculate costs using the original distance matrix (not adjusted distances)
+        for (size_t i = 0; i < results.path.size() - 1; ++i) {
+            int from = results.path[i];
+            int to = results.path[i + 1];
+            int legDistance = manager->getDistance(from, to);
+            
+            // Apply external factor adjustments to time calculation
+            double combinedFactor = (weatherFactor * WEATHER_WEIGHT) +
+                                 (trafficFactor * TRAFFIC_WEIGHT) +
+                                 (timeOfDayFactor * TIME_OF_DAY_WEIGHT) +
+                                 (seasonalFactor * SEASONAL_WEIGHT) +
+                                 (roadConditionFactor * ROAD_CONDITION_WEIGHT);
+            
+            // Adjust time based on external factors (worse conditions = longer time)
+            double timeAdjustment = 1.0 + (combinedFactor * 0.5);
+            double legTime = legDistance * TIME_PER_KM * timeAdjustment;
+            
+            // Adjust fuel based on external factors (worse conditions = more fuel)
+            double fuelAdjustment = 1.0 + (combinedFactor * 0.3);
+            double legFuel = legDistance * FUEL_COST_PER_KM * fuelAdjustment;
+            
+            double legWage = (legTime / 60) * WAGE_PER_HOUR;
+            
+            results.totalDistance += legDistance;
+            results.totalTime += legTime;
+            results.totalFuel += legFuel;
+            results.totalWage += legWage;
+        }
+        
+        // Update historical data with current external factors
+        updateHistoricalData(locations);
+        
+        // Generate environmental impact report
+        saveEnvironmentalImpact("environmental_impact.txt", results, manager);
+        
+        return results;
+    }
+    
+    // Get current external factors for display
+    void getExternalFactors(double& weather, double& traffic, double& timeOfDay, 
+                          double& seasonal, double& road) const {
+        weather = weatherFactor;
+        traffic = trafficFactor;
+        timeOfDay = timeOfDayFactor;
+        seasonal = seasonalFactor;
+        road = roadConditionFactor;
+    }
+};
+
+/**
  * @class CollectionRoute
  * 
  * @brief A class that represents a collection route with a strategy for calculating the optimal route.
@@ -2034,9 +2586,15 @@ public:
             return "Minimum Spanning Tree";
         } else if (dynamic_cast<RLRoute*>(strategy.get())) {
             return "Reinforcement Learning";
+        } else if (dynamic_cast<ExternalFactorsRoute*>(strategy.get())) {
+            return "External Factors AI-based";
         } else {
             return "Unknown Strategy";
         }
+    }
+
+    shared_ptr<RouteStrategy> getStrategy() const {
+        return strategy;
     }
 };
 
@@ -2117,7 +2675,8 @@ private:
         cout << "4. Traveling Salesman Problem (TSP) Route" << endl;
         cout << "5. Minimum Spanning Tree (MST) Route" << endl;
         cout << "6. Reinforcement Learning (RL) Route" << endl;
-        cout << "7. Return to Main Menu" << endl;
+        cout << "7. External Factors AI-based Route" << endl;
+        cout << "8. Return to Main Menu" << endl;
         cout << "\nEnter your choice: ";
         
         int choice;
@@ -2149,6 +2708,10 @@ private:
                 currentRoute = 6;
                 break;
             case 7:
+                route.setStrategy(make_shared<ExternalFactorsRoute>());
+                currentRoute = 7;
+                break;
+            case 8:
                 // Return to main menu
                 break;
             default:
@@ -2165,6 +2728,7 @@ private:
             case 4: return "Traveling Salesman Problem (TSP)";
             case 5: return "Minimum Spanning Tree (MST)";
             case 6: return "Reinforcement Learning (RL)";
+            case 7: return "External Factors AI-based";
             default: return "Not Selected";
         }
     }
@@ -2279,6 +2843,7 @@ private:
         cout << "     Spanning Tree to find an efficient route" << endl;
         cout << "   - RL: Visits locations with waste level ≥30% using Reinforcement" << endl;
         cout << "     Learning to optimize the route based on past experiences" << endl;
+        cout << "   - External Factors AI-based: Optimizes routes based on external factors" << endl;
         setTextColor(COLOR_WHITE);
         
         cout << "\n4. Execute Selected Route:" << endl;
@@ -3052,17 +3617,26 @@ public:
         while (running) {
             displayHeader();
             displayMenu();
-            
             cin >> choice;
+            
+            if (cin.fail()) {
+                cin.clear();  // Clear the error flag
+                cin.ignore(10000, '\n');  // Discard invalid input
+                cout << "Invalid input. Please enter a number." << endl;
+                system("pause");
+                continue;
+            }
             
             switch (choice) {
                 case 1:
+                    // Generate random waste levels
                     locationManager->generateRandomWasteLevels();
-                    cout << "Random waste levels generated." << endl;
+                    cout << "\nRandom waste levels generated." << endl;
                     system("pause");
                     break;
                     
                 case 2:
+                    // View waste locations info
                     system("cls");
                     displayHeader();
                     locationManager->printLocationsInfo();
@@ -3070,73 +3644,149 @@ public:
                     break;
                     
                 case 3:
+                    // Select route algorithm
                     selectRouteAlgorithm();
                     break;
                     
                 case 4:
+                    // Execute selected route
                     system("cls");
                     displayHeader();
-                    
-                    if (currentRoute == 0) {
-                        cout << "Please select a route algorithm first." << endl;
-                    } else {
-                        try {
-                            // Execute the route and save results
-                            RouteResults result = route.executeRoute(locationManager);
-                            
-                            // Visualize route with ASCII graphics
-                            visualizeRoute(result, locationManager);
-                            
-                            // Store route results for comparison
-                            routeResults[getCurrentRouteAlgorithm()] = result;
-                            
-                            // Visualize the route on a map
-                            visualizeRouteMap(result, locationManager);
-                        } catch (const InvalidRouteException& e) {
-                            cout << "Error: " << e.what() << endl;
+                    try {
+                        RouteResults results = route.executeRoute(locationManager);
+                        
+                        // Save the results for comparison
+                        routeResults[getCurrentRouteAlgorithm()] = results;
+                        
+                        // Show route visualization
+                        cout << "\nWould you like to see a visual map of the route? (y/n): ";
+                        char mapChoice;
+                        cin >> mapChoice;
+                        
+                        if (mapChoice == 'y' || mapChoice == 'Y') {
+                            visualizeRouteMap(results, locationManager);
                         }
+                        
+                        // If using External Factors AI-based route, display external factors
+                        if (currentRoute == 7) {
+                            auto extRoute = dynamic_cast<ExternalFactorsRoute*>(route.getStrategy().get());
+                            if (extRoute) {
+                                double weather, traffic, timeOfDay, seasonal, road;
+                                extRoute->getExternalFactors(weather, traffic, timeOfDay, seasonal, road);
+                                
+                                cout << "\nExternal Factors Analysis:" << endl;
+                                cout << "------------------------" << endl;
+                                cout << "Weather Condition: " << fixed << setprecision(2) << weather * 100 << "% impact" << endl;
+                                cout << "Traffic Congestion: " << traffic * 100 << "% impact" << endl;
+                                cout << "Time of Day Factor: " << timeOfDay * 100 << "% impact" << endl;
+                                cout << "Seasonal Factor: " << seasonal * 100 << "% impact" << endl;
+                                cout << "Road Condition: " << road * 100 << "% impact" << endl;
+                                
+                                cout << "\nEnvironmental impact analysis saved to 'environmental_impact.txt'" << endl;
+                            }
+                        }
+                    }
+                    catch (const InvalidRouteException& e) {
+                        UIHelper::displayError(e.what());
                     }
                     system("pause");
                     break;
                     
                 case 5:
-                    locationManager->saveDataToFile(false);
+                    // Save locations info to file
+                    {
+                        ofstream outFile("locations_info.txt");
+                        if (!outFile) {
+                            UIHelper::displayError("Cannot open file: locations_info.txt");
+                            system("pause");
+                            break;
+                        }
+                        
+                        const vector<WasteLocation>& locations = locationManager->getLocations();
+                        
+                        outFile << "Waste Locations Information" << endl;
+                        outFile << "===========================" << endl << endl;
+                        
+                        outFile << left 
+                            << setw(30) << "Location" 
+                            << setw(20) << "Waste Level %" 
+                            << endl;
+                        outFile << string(50, '-') << endl;
+                        
+                        for (const auto& loc : locations) {
+                            outFile << left 
+                                << setw(30) << loc.getName() 
+                                << setw(20) << loc.getWasteLevel() 
+                                << endl;
+                        }
+                        
+                        outFile << endl << "Distance Matrix (km)" << endl;
+                        outFile << "====================" << endl << endl;
+                        
+                        // Header row
+                        outFile << setw(20) << "From\\To";
+                        for (const auto& loc : locations) {
+                            outFile << setw(15) << loc.getName();
+                        }
+                        outFile << endl;
+                        
+                        // Distance matrix
+                        for (size_t i = 0; i < locations.size(); i++) {
+                            outFile << setw(20) << locations[i].getName();
+                            for (size_t j = 0; j < locations.size(); j++) {
+                                outFile << setw(15) << locationManager->getDistance(i, j);
+                            }
+                            outFile << endl;
+                        }
+                        
+                        outFile.close();
+                        
+                        UIHelper::displaySuccess("Locations info saved to 'locations_info.txt'");
+                    }
                     system("pause");
                     break;
                     
                 case 6:
+                    // View AI predictions
                     viewAIPredictions();
                     break;
                     
                 case 7:
+                    // Compare route costs
                     compareRoutes();
                     break;
                     
                 case 8:
+                    // Waste Pattern Analytics Dashboard
                     displayAnalyticsDashboard();
                     break;
-
+                    
                 case 9:
+                    // Help
                     showHelp();
                     break;
-                
+                    
                 case 10:
+                    // Save all data
                     saveData();
                     break;
                     
                 case 11:
+                    // Load data
                     loadData();
                     break;
                     
                 case 12:
+                    // Delete saved data
                     deleteData();
                     break;
-
+                    
                 case 0:
+                    // Exit with confirmation and save option
                     if (confirmAction("Are you sure you want to exit?")) {
-                        // Ask to save before exit
+                        // Ask if user wants to save data before exiting
                         if (confirmAction("Do you want to save your data before exiting?")) {
-                            locationManager->saveDataToFile(true);
+                            saveData();
                         }
                         running = false;
                     }
@@ -3145,7 +3795,6 @@ public:
                 default:
                     cout << "Invalid choice. Please try again." << endl;
                     system("pause");
-                    break;
             }
         }
     }
