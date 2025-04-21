@@ -17,6 +17,8 @@
 #include <cmath>        // Mathematical functions
 #include <windows.h>    // Windows-specific API for console colors
 #include <cfloat>       // Floating-point constants like DBL_MAX
+#include <unordered_set> // Hash-based set for fast membership testing
+#include <sstream>     // String stream for formatted output
 
 // Define PI if not already defined by system headers
 #ifndef M_PI
@@ -32,14 +34,7 @@
 
 using namespace std;
 
-// Forward declarations
-// The system follows a layered architecture with separation of concerns:
-// - WasteLocation: Core data entity representing collection points
-// - RouteStrategy: Strategy pattern for different routing algorithms
-// - AIPredictionModel: ML-based analytics for waste level forecasting
-// - WasteLocationManager: Singleton for centralized data management
 class WasteLocation;
-class CollectionRoute;       // Facade for route execution with strategy injection
 class RouteStrategy;         // Abstract base class for all routing algorithms
 class NonOptimizedRoute;     // Basic route for locations with ≥40% waste within 30km
 class OptimizedRoute;        // Optimized route for locations with ≥60% waste within 20km
@@ -47,9 +42,11 @@ class GreedyRoute;           // Nearest-neighbor based route for ≥30% waste le
 class TSPRoute;              // Traveling Salesman Problem route for minimal distance
 class MSTRoute;              // Minimum Spanning Tree based route for efficient clustering
 class RLRoute;               // Reinforcement Learning route with adaptive optimization
+class ExternalFactorsRoute;  // AI-based route optimization considering external factors
+class CollectionRoute;       // Facade for route execution with strategy injection
 class AIPredictionModel;     // Machine learning model for waste trend analysis and forecasting
 class WasteLocationManager;  // Singleton manager for location data with persistence support
-class ExternalFactorsRoute; // AI-based route optimization considering external factors
+class ExternalFactorsRoute;  // AI-based route optimization considering external factors
 
 // Complete definition of RouteResults struct
 // Container for route calculation outcomes, used for cost analysis,
@@ -112,16 +109,10 @@ public:
 };
 /**
  * @class InvalidWasteLevelException
- * @brief A custom exception class for invalid waste levels in waste management.
+ * @brief An exception class for representing invalid waste levels in waste management.
  * 
  * This exception is thrown when an invalid waste level is encountered for a specific location.
- * 
- * @inheritance WasteManagementException
- * 
- * @public
- * @constructor
- * @param location The location where the invalid waste level was encountered.
- * @param level The invalid waste level.
+ * It is derived from the WasteManagementException class.
  */
 class InvalidWasteLevelException : public WasteManagementException {
 public:
@@ -134,78 +125,63 @@ public:
  * 
  * This class is derived from the WasteManagementException class and is used to handle exceptions related to file operations.
  */
- 
+//Class `FileOperationException` is a custom exception class that is derived from the base class `WasteManagementException`. It represents an exception that occurs when a file operation fails. The class has a constructor that takes two parameters: `operation` (representing the type of operation) and `filename` (representing the name of the file). The constructor initializes the base class `WasteManagementException` with a formatted error message. 
 class FileOperationException : public WasteManagementException {
 public:
     FileOperationException(const string& operation, const string& filename) 
         : WasteManagementException("File " + operation + " failed for: " + filename) {}
 };
+
 /**
  * @class WasteLocation
  * 
- * @brief A class representing a waste location with its waste level and collection status.
+ * @brief A class that represents a waste location, storing information about its name, waste level, collection status, historical data, and collection history.
  * 
- * The WasteLocation class stores information about a waste location, including its name, waste level in percentage, collection status, and historical data for AI prediction. It provides methods to retrieve and modify these attributes.
- * 
- * Public Methods:
- * - `WasteLocation(const string& locationName, int initialWasteLevel = 0)`: Constructs a WasteLocation object with the specified name and initial waste level.
- * - `string getName() const`: Returns the name of the waste location.
- * - `int getWasteLevel() const`: Returns the current waste level of the waste location.
- * - `bool getIsCollected() const`: Returns the collection status of the waste location.
- * - `void setWasteLevel(int level)`: Sets the waste level of the waste location and stores the previous waste level for AI prediction.
- * - `void setIsCollected(bool collected)`: Sets the collection status of the waste location.
- * - `const vector<pair<int, double>>& getHistoricalData() const`: Returns the historical data of waste levels for AI prediction.
- * - `void addHistoricalDataPoint(time_t timestamp, double level)`: Adds a data point to the historical data of waste levels.
- * - `void clearHistoricalData()`: Clears the historical data of waste levels.
- *//**
- * @class WasteLocation
- * 
- * @brief A class that represents a waste location.
- * 
- * The WasteLocation class stores information about a waste location, including its name, waste level, collection status, and historical waste level data. It provides methods to retrieve and modify these attributes.
- * 
- * @private
- * @member name: The name of the waste location.
- * @member wasteLevel: The waste level of the location in percentage.
- * @member isCollected: A boolean flag indicating whether the waste has been collected.
- * @member previousWasteLevels: A vector of pairs storing the historical waste level data for AI prediction.
+ * The WasteLocation class provides methods to retrieve and modify the waste level, collection status, and historical data of a waste location. It also allows recording and retrieving collection history.
  * 
  * @public
- * @constructor WasteLocation: Constructs a WasteLocation object with the given name and initial waste level.
- * @param locationName: The name of the waste location.
- * @param initialWasteLevel: The initial waste level of the location (default: 0).
  * 
- * @public
- * @method getName: Retrieves the name of the waste location.
+ * @param name The name of the waste location.
+ * @param wasteLevel The current waste level of the location in percentage.
+ * @param isCollected The collection status of the location.
+ * @param previousWasteLevels A vector of pairs storing historical waste levels for AI prediction.
+ * @param collectionHistory A vector of pairs storing timestamps and collected amounts for collection history.
+ * 
+ * @member getName Gets the name of the waste location.
  * @return The name of the waste location.
  * 
- * @public
- * @method getWasteLevel: Retrieves the waste level of the location.
- * @return The waste level of the location.
+ * @member getWasteLevel Gets the waste level of the waste location.
+ * @return The waste level of the waste location.
  * 
- * @public
- * @method getIsCollected: Retrieves the collection status of the waste location.
- * @return A boolean flag indicating whether the waste has been collected.
+ * @member getIsCollected Gets the collection status of the waste location.
+ * @return The collection status of the waste location.
  * 
- * @public
- * @method setWasteLevel: Sets the waste level of the location.
- * @param level: The waste level to be set.
+ * @member setWasteLevel Sets the waste level of the waste location.
+ * @param level The new waste level to be set.
  * 
- * @public
- * @method setIsCollected: Sets the collection status of the waste location.
- * @param collected: A boolean flag indicating whether the waste has been collected.
+ * @member setIsCollected Sets the collection status of the waste location.
+ * @param collected The new collection status to be set.
  * 
- * @public
- * @method getHistoricalData: Retrieves the historical waste level data.
+ * @member getHistoricalData Gets the historical waste level data of the waste location.
  * @return A const reference to the vector of pairs storing the historical waste level data.
  * 
- * @public
- * @method addHistoricalDataPoint: Adds a data point to the historical waste level data.
- * @param timestamp: The timestamp of the data point.
- * @param level: The waste level of the data point.
+ * @member addHistoricalDataPoint Adds a new historical waste level data point to the waste location.
+ * @param timestamp The timestamp of the data point.
+ * @param level The waste level of the data point.
  * 
- * @public
- * @method clearHistoricalData: Clears the historical waste level data.
+ * @member clearHistoricalData Clears the historical waste level data of the waste location.
+ * 
+ * @member recordCollection Records a collection with the current timestamp and amount collected.
+ * @param amountCollected The amount of waste collected.
+ * 
+ * @member recordCollection Records a collection with a specific timestamp and amount collected.
+ * @param amountCollected The amount of waste collected.
+ * @param timestamp The timestamp of the collection.
+ * 
+ * @member getCollectionHistory Gets the collection history of the waste location.
+ * @return A const reference to the vector of pairs storing the collection history.
+ * 
+ * @member clearCollectionHistory Clears the collection history of the waste location.
  */
 class WasteLocation {
 private:
@@ -213,7 +189,8 @@ private:
     int wasteLevel; // In percentage
     bool isCollected;
     vector<pair<int, double>> previousWasteLevels; // Store historical data for AI prediction
-    
+    vector<pair<time_t, double>> collectionHistory; // Store timestamps and collected amounts
+
 public:
     WasteLocation(const string& locationName, int initialWasteLevel = 0) 
         : name(locationName), wasteLevel(initialWasteLevel), isCollected(false) {}
@@ -253,30 +230,47 @@ public:
     void clearHistoricalData() {
         previousWasteLevels.clear();
     }
+
+    // Add method to record a collection
+    void recordCollection(double amountCollected) {
+        time_t now = time(nullptr);
+        collectionHistory.push_back(make_pair(now, amountCollected));
+    }
+    
+    // Add overload for when we have a specific timestamp
+    void recordCollection(double amountCollected, time_t timestamp) {
+        collectionHistory.push_back(make_pair(timestamp, amountCollected));
+    }
+    
+    // Add getter for collection history
+    const vector<pair<time_t, double>>& getCollectionHistory() const {
+        return collectionHistory;
+    }
+    
+    // Add method to clear collection history
+    void clearCollectionHistory() {
+        collectionHistory.clear();
+    }
 };
 
 /**
- * @class AIPredictionModel
+ * AIPredictionModel class
  * 
- * @brief A class that represents an AI prediction model for waste level prediction and analysis.
+ * This class represents a prediction model for waste levels at different locations. It uses a simple linear regression model to make predictions and detect anomalies in waste levels. The class provides methods to predict waste levels for future days, detect anomalies in waste levels, and determine the trend of waste levels based on historical data.
  * 
- * This class provides functionality for predicting waste levels, detecting anomalies, and analyzing waste level trends.
+ * Class Members:
+ * - slope: a double representing the slope of the linear regression model
+ * - intercept: a double representing the intercept of the linear regression model
+ * - meanWasteLevel: a double representing the mean waste level for anomaly detection
+ * - stdDevWasteLevel: a double representing the standard deviation of waste levels for anomaly detection
  * 
- * The prediction model utilizes simple linear regression to calculate the regression parameters, such as slope and intercept,
- * based on historical data. It then uses these parameters to predict the waste level for a future day. The prediction is
- * constrained to be within the range of 0 to 100.
- * 
- * Anomaly detection is performed by calculating the mean and standard deviation of the historical data. If the current waste
- * level deviates more than 2 standard deviations from the mean, it is flagged as an anomaly.
- * 
- * Waste level trend analysis is also supported by calculating the regression parameters. The slope of the regression line is
- * used to determine the trend. The trend is classified as rapidly decreasing, decreasing, stable, increasing, or rapidly
- * increasing based on predefined thresholds.
- * 
- * The AIPredictionModel class is designed to be used with the WasteLocation class, which provides the necessary data for
- * prediction, anomaly detection, and trend analysis.
+ * Methods:
+ * - calculateRegressionParameters: a private method that calculates the regression parameters based on historical data
+ * - AIPredictionModel: a constructor that initializes the member variables
+ * - predictWasteLevel: a method that predicts the waste level for a future day based on historical data and the current waste level
+ * - isAnomaly: a method that detects anomalies in waste levels based on historical data and the current waste level
+ * - getWasteTrend: a method that determines the trend of waste levels based on historical data
  */
- // AI Model for waste prediction
 class AIPredictionModel {
 private:
     // Simple linear regression model
@@ -319,7 +313,13 @@ public:
                 sumX2 += point.first * point.first;
             }
             
-            tempSlope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+            if ((n * sumX2 - sumX * sumX) != 0) {
+                tempSlope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+                
+                // *** Add constraint to the slope to make predictions more realistic ***
+                // Limit the maximum daily change to between -15% and +15%
+                tempSlope = max(-15.0, min(15.0, tempSlope));
+            }
             tempIntercept = (sumY - tempSlope * sumX) / n;
             tempMean = sumY / n;
         } else {
@@ -329,7 +329,12 @@ public:
         // Predict waste level for future day using local variables
         int lastDay = historicalData.back().first;
         int futureDay = lastDay + (daysAhead * 86400); // Convert days to seconds
-        double predictedWaste = tempSlope * futureDay + tempIntercept;
+        
+        // For more realistic predictions, add diminishing returns for longer forecasts
+        double decayFactor = 1.0 / (1.0 + (daysAhead * 0.2)); // Reduces impact over time
+        double adjustedSlope = tempSlope * decayFactor;
+        
+        double predictedWaste = adjustedSlope * (futureDay - lastDay) + location.getWasteLevel();
         
         // Ensure prediction is within reasonable range
         predictedWaste = max(0.0, min(100.0, predictedWaste));
@@ -411,22 +416,30 @@ public:
     }
 };
 
-// Add this function before the WasteLocationManager class
 
-// Helper function for text color
+
+/**
+ * Sets the text color in the console.
+ *
+ * @param colorCode The code representing the desired color.
+ */// Helper function for text color
 void setTextColor(int colorCode) {
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     SetConsoleTextAttribute(hConsole, colorCode);
 }
-
 /**
  * @class UIHelper
- * @brief A helper class for displaying various types of messages and information in the user interface.
  * 
- * This class provides static methods for displaying error messages, success messages, warnings, savings information,
- * progress bars, and cost comparisons in the user interface.
- */
-// Add this before WasteLocationManager class
+ * This class provides static methods for displaying different types of messages and information on the console.
+ * 
+ * Methods:
+ * - displayError(const string& error): Displays an error message in red color.
+ * - displaySuccess(const string& message): Displays a success message in green color.
+ * - displayWarning(const string& message): Displays a warning message in yellow color.
+ * - displaySavings(const string& message, double amount): Displays a message about savings with a specified amount in green color.
+ * - displayProgressBar(int progress): Displays a progress bar with the specified progress percentage.
+ * - displayCostComparison(const map<string, RouteResults>& routeResults): Displays a cost comparison table for different routes.
+ **/
 class UIHelper {
 public:
     static void displayError(const string& error) {
@@ -809,6 +822,15 @@ public:
                         outFile.write(reinterpret_cast<const char*>(&point.second), sizeof(point.second));
                     }
                     
+                    // Save collection history
+            const vector<pair<time_t, double>>& collectionHistory = locations[i].getCollectionHistory();
+            int collectionHistorySize = collectionHistory.size();
+            outFile.write(reinterpret_cast<char*>(&collectionHistorySize), sizeof(collectionHistorySize));
+            
+            for (const auto& point : collectionHistory) {
+                outFile.write(reinterpret_cast<const char*>(&point.first), sizeof(point.first));
+                outFile.write(reinterpret_cast<const char*>(&point.second), sizeof(point.second));
+            }
                     UIHelper::displayProgressBar(10 + (i * 40 / locations.size()));
                 }
                 
@@ -952,6 +974,19 @@ public:
                     
                     location.addHistoricalDataPoint(timestamp, level);
                 }
+
+                // Read collection history
+        int collectionHistorySize;
+        inFile.read(reinterpret_cast<char*>(&collectionHistorySize), sizeof(collectionHistorySize));
+        
+        for (int j = 0; j < collectionHistorySize; j++) {
+            time_t timestamp;
+            double amount;
+            inFile.read(reinterpret_cast<char*>(&timestamp), sizeof(timestamp));
+            inFile.read(reinterpret_cast<char*>(&amount), sizeof(amount));
+            
+            location.recordCollection(amount, timestamp);
+        }
                 
                 // Add location to the vector
                 locations.push_back(location);
@@ -1059,19 +1094,32 @@ public:
             // Randomly decide on a trend direction (-1, 0, 1)
             int trendDirection = (rand() % 3) - 1;
             
-            // Use a much larger trend strength to compensate for the slope calculation
-            double trendStrength = (0.5 + (rand() % 10) / 10.0) * (trendDirection == 0 ? 0.1 : trendDirection);
+            // Stronger trend strength for more visible changes
+            double trendStrength = (5.0 + (rand() % 15) / 5.0) * (trendDirection == 0 ? 0.1 : trendDirection);
             
-            // For all locations, create actual historical data points
+            // Simulate historical data points that will create different predictions for different time frames
             for (int j = 10; j >= 0; j--) {
-                // Determine the trend effect for this data point
-                double trendEffect = j * trendStrength * 5;
+                // Create a progressively stronger effect for more distant predictions
+                // Make trend effect proportional to how far in the future we're predicting
+                double timeMultiplier = (10 - j) * 1.5;
+                
+                // Apply randomization that increases with prediction distance
+                double randomFactor = (10 - j) * (rand() % 15) / 10.0;
+                
+                // Base trend effect with increasing impact over time
+                double trendEffect = timeMultiplier * trendStrength;
+                
+                // Add the random factor to create more variation
+                if (rand() % 2 == 0) {
+                    trendEffect += randomFactor;
+                } else {
+                    trendEffect -= randomFactor;
+                }
                 
                 // Calculate level within bounds
                 int historicalLevel = max(5, min(95, static_cast<int>(currentLevel - trendEffect)));
                 
-                // Store historical data point with small timestamp values
-                // Use j directly instead of days to create more pronounced slopes
+                // Store historical data point
                 locations[i].addHistoricalDataPoint(j, historicalLevel);
             }
             
@@ -1995,430 +2043,399 @@ private:
  */
 // Concrete strategy: External Factors AI-based Route
 class ExternalFactorsRoute : public RouteStrategy {
-private:
-    // Constants for external factor weights
-    const double WEATHER_WEIGHT = 0.2;
-    const double TRAFFIC_WEIGHT = 0.3;
-    const double TIME_OF_DAY_WEIGHT = 0.25;
-    const double SEASONAL_WEIGHT = 0.15;
-    const double ROAD_CONDITION_WEIGHT = 0.1;
-    
-    // Weather condition factors (0-1 scale, higher means worse)
-    double weatherFactor;
-    // Traffic congestion factors (0-1 scale, higher means worse)
-    double trafficFactor;
-    // Time of day factors (0-1 scale, higher means worse)
-    double timeOfDayFactor;
-    // Seasonal factors (0-1 scale, higher means worse)
-    double seasonalFactor;
-    // Road condition factors (0-1 scale, higher means worse)
-    double roadConditionFactor;
-    
-    // Database of historical external factors data
-    unordered_map<string, vector<double>> historicalData;
-    
-    // Neural network weights for location predictions
-    vector<vector<double>> neuralNetWeights;
-    
-    // Cached optimal paths for specific conditions
-    unordered_map<string, vector<int>> pathCache;
-    
-    // ML-based road segment prediction model
-    vector<double> segmentPredictions;
-    
-    // Method to get current weather conditions (simulated)
-    double getCurrentWeatherFactor() const {
-        // In a real implementation, this would connect to a weather API
-        // For demonstration, generate random weather factor or use historical pattern
-        time_t now = time(nullptr);
-        tm* ltm = localtime(&now);
+    private:
+        // Constants for external factor weights
+        const double WEATHER_WEIGHT = 0.2;
+        const double TRAFFIC_WEIGHT = 0.3;
+        const double TIME_OF_DAY_WEIGHT = 0.25;
+        const double SEASONAL_WEIGHT = 0.15;
+        const double ROAD_CONDITION_WEIGHT = 0.1;
         
-        // Simulate seasonal weather patterns - worse in winter months
-        if (ltm->tm_mon >= 10 || ltm->tm_mon <= 2) { // November to March
-            return 0.6 + ((rand() % 40) / 100.0); // 0.6-1.0 (worse weather)
-        } else if (ltm->tm_mon >= 3 && ltm->tm_mon <= 5) { // April to June
-            return 0.3 + ((rand() % 40) / 100.0); // 0.3-0.7 (moderate)
-        } else {
-            return 0.1 + ((rand() % 30) / 100.0); // 0.1-0.4 (better weather)
-        }
-    }
-    
-    // Method to get current traffic conditions (simulated)
-    double getCurrentTrafficFactor() const {
-        // In a real implementation, this would connect to a traffic API
-        // For demonstration, simulate traffic based on time of day
-        time_t now = time(nullptr);
-        tm* ltm = localtime(&now);
-        int hour = ltm->tm_hour;
+        // Weather condition factors (0-1 scale, higher means worse)
+        double weatherFactor;
+        // Traffic congestion factors (0-1 scale, higher means worse)
+        double trafficFactor;
+        // Time of day factors (0-1 scale, higher means worse)
+        double timeOfDayFactor;
+        // Seasonal factors (0-1 scale, higher means worse)
+        double seasonalFactor;
+        // Road condition factors (0-1 scale, higher means worse)
+        double roadConditionFactor;
         
-        // Simulate rush hour traffic patterns
-        if ((hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 18)) {
-            return 0.7 + ((rand() % 30) / 100.0); // 0.7-1.0 (heavy traffic)
-        } else if ((hour >= 10 && hour <= 15) || (hour >= 19 && hour <= 21)) {
-            return 0.3 + ((rand() % 40) / 100.0); // 0.3-0.7 (moderate traffic)
-        } else {
-            return 0.1 + ((rand() % 30) / 100.0); // 0.1-0.4 (light traffic)
-        }
-    }
-    
-    // Method to get time of day factor
-    double getTimeOfDayFactor() const {
-        // Optimize for time of day - prefer working during daylight and non-rush hours
-        time_t now = time(nullptr);
-        tm* ltm = localtime(&now);
-        int hour = ltm->tm_hour;
+        // Database of historical external factors data
+        unordered_map<string, vector<double>> historicalData;
         
-        // Avoid very early morning, rush hours, and late night
-        if (hour < 5 || hour >= 22) {
-            return 0.8; // Late night/early morning (challenging)
-        } else if ((hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 18)) {
-            return 0.7; // Rush hours (avoid)
-        } else if (hour >= 10 && hour <= 15) {
-            return 0.2; // Midday (ideal)
-        } else {
-            return 0.5; // Early evening (acceptable)
-        }
-    }
-    
-    // Method to get seasonal factor
-    double getSeasonalFactor() const {
-        // Account for seasonal variations
-        time_t now = time(nullptr);
-        tm* ltm = localtime(&now);
-        int month = ltm->tm_mon;
-        int day = ltm->tm_mday;
+        // Neural network weights for location predictions
+        vector<vector<double>> neuralNetWeights;
         
-        // Holiday season (December)
-        if (month == 11) {
-            return 0.7; // Holiday congestion
-        }
-        // Summer tourist season
-        else if (month >= 5 && month <= 8) {
-            return 0.6; // Tourist congestion
-        }
-        // Special holidays (simplified)
-        else if ((month == 0 && day == 1) || // New Year
-                (month == 4 && day >= 29 && day <= 31) || // Labor Day
-                (month == 6 && day == 4) || // Independence Day
-                (month == 10 && (day >= 22 && day <= 28))) { // Thanksgiving
-            return 0.8; // Holiday congestion
-        } else {
-            return 0.3; // Normal conditions
-        }
-    }
-    
-    // Method to get road condition factor (simulated)
-    double getRoadConditionFactor() const {
-        // In a real implementation, this would connect to a road condition API
-        // For demonstration, simulate based on weather and season
-        double weatherEffect = getCurrentWeatherFactor();
-        double seasonEffect = getSeasonalFactor();
+        // Cached optimal paths for specific conditions
+        unordered_map<string, vector<int>> pathCache;
         
-        // Combine weather and seasonal effects with some randomness
-        return (weatherEffect * 0.6) + (seasonEffect * 0.3) + ((rand() % 20) / 100.0);
-    }
-    
-    // Calculate the external factor adjusted distance
-    int getAdjustedDistance(int actualDistance, int fromLocation, int toLocation) const {
-        // Combine all external factors into a single multiplier
-        double combinedFactor = (weatherFactor * WEATHER_WEIGHT) +
-                               (trafficFactor * TRAFFIC_WEIGHT) +
-                               (timeOfDayFactor * TIME_OF_DAY_WEIGHT) +
-                               (seasonalFactor * SEASONAL_WEIGHT) +
-                               (roadConditionFactor * ROAD_CONDITION_WEIGHT);
+        // ML-based road segment prediction model
+        vector<double> segmentPredictions;
         
-        // Apply neural network prediction model (simplified version)
-        double locationEffect = 1.0;
-        if (!neuralNetWeights.empty() && fromLocation < neuralNetWeights.size() && 
-            toLocation < neuralNetWeights[fromLocation].size()) {
-            locationEffect = neuralNetWeights[fromLocation][toLocation];
+        // Method to get current weather conditions (simulated)
+        double getCurrentWeatherFactor() const {
+            // In a real implementation, this would connect to a weather API
+            // For demonstration, generate random weather factor or use historical pattern
+            time_t now = time(nullptr);
+            tm* ltm = localtime(&now);
+            
+            // Simulate seasonal weather patterns - worse in winter months
+            if (ltm->tm_mon >= 10 || ltm->tm_mon <= 2) { // November to March
+                return 0.6 + ((rand() % 40) / 100.0); // 0.6-1.0 (worse weather)
+            } else if (ltm->tm_mon >= 3 && ltm->tm_mon <= 5) { // April to June
+                return 0.3 + ((rand() % 40) / 100.0); // 0.3-0.7 (moderate)
+            } else {
+                return 0.1 + ((rand() % 30) / 100.0); // 0.1-0.4 (better weather)
+            }
         }
         
-        // Calculate adjusted distance - worse conditions = longer effective distance
-        double adjustmentFactor = 1.0 + (combinedFactor * locationEffect);
-        return static_cast<int>(actualDistance * adjustmentFactor);
-    }
-    
-    // Initialize the neural network weights for location-specific effects
-    void initializeNeuralNetwork(int numLocations) {
-        // Create a matrix of weights for each location pair
-        neuralNetWeights.resize(numLocations);
+        // Method to get current traffic conditions (simulated)
+        double getCurrentTrafficFactor() const {
+            // In a real implementation, this would connect to a traffic API
+            // For demonstration, simulate traffic based on time of day
+            time_t now = time(nullptr);
+            tm* ltm = localtime(&now);
+            int hour = ltm->tm_hour;
+            
+            // Simulate rush hour traffic patterns
+            if ((hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 18)) {
+                return 0.7 + ((rand() % 30) / 100.0); // 0.7-1.0 (heavy traffic)
+            } else if ((hour >= 10 && hour <= 15) || (hour >= 19 && hour <= 21)) {
+                return 0.3 + ((rand() % 40) / 100.0); // 0.3-0.7 (moderate traffic)
+            } else {
+                return 0.1 + ((rand() % 30) / 100.0); // 0.1-0.4 (light traffic)
+            }
+        }
         
-        for (int i = 0; i < numLocations; i++) {
-            neuralNetWeights[i].resize(numLocations);
-            for (int j = 0; j < numLocations; j++) {
-                if (i == j) {
-                    neuralNetWeights[i][j] = 0.0; // No effect for same location
-                } else {
-                    // Initialize with random weights between 0.8 and 1.2
-                    // In a real implementation, these would be trained on historical data
-                    neuralNetWeights[i][j] = 0.8 + ((rand() % 40) / 100.0);
+        // Method to get time of day factor
+        double getTimeOfDayFactor() const {
+            // Optimize for time of day - prefer working during daylight and non-rush hours
+            time_t now = time(nullptr);
+            tm* ltm = localtime(&now);
+            int hour = ltm->tm_hour;
+            
+            // Avoid very early morning, rush hours, and late night
+            if (hour < 5 || hour >= 22) {
+                return 0.8; // Late night/early morning (challenging)
+            } else if ((hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 18)) {
+                return 0.7; // Rush hours (avoid)
+            } else if (hour >= 10 && hour <= 15) {
+                return 0.2; // Midday (ideal)
+            } else {
+                return 0.5; // Early evening (acceptable)
+            }
+        }
+        
+        // Method to get seasonal factor
+        double getSeasonalFactor() const {
+            // Account for seasonal variations
+            time_t now = time(nullptr);
+            tm* ltm = localtime(&now);
+            int month = ltm->tm_mon;
+            int day = ltm->tm_mday;
+            
+            // Holiday season (December)
+            if (month == 11) {
+                return 0.7; // Holiday congestion
+            }
+            // Summer tourist season
+            else if (month >= 5 && month <= 8) {
+                return 0.6; // Tourist congestion
+            }
+            // Special holidays (simplified)
+            else if ((month == 0 && day == 1) || // New Year
+                    (month == 4 && day >= 29 && day <= 31) || // Labor Day
+                    (month == 6 && day == 4) || // Independence Day
+                    (month == 10 && (day >= 22 && day <= 28))) { // Thanksgiving
+                return 0.8; // Holiday congestion
+            } else {
+                return 0.3; // Normal conditions
+            }
+        }
+        
+        // Method to get road condition factor (simulated)
+        double getRoadConditionFactor() const {
+            // In a real implementation, this would connect to a road condition API
+            // For demonstration, simulate based on weather and season
+            double weatherEffect = getCurrentWeatherFactor();
+            double seasonEffect = getSeasonalFactor();
+            
+            // Combine weather and seasonal effects with some randomness
+            return (weatherEffect * 0.6) + (seasonEffect * 0.3) + ((rand() % 20) / 100.0);
+        }
+        
+        // Calculate the external factor adjusted distance
+        int getAdjustedDistance(int actualDistance, int fromLocation, int toLocation) const {
+            // Combine all external factors into a single multiplier
+            double combinedFactor = (weatherFactor * WEATHER_WEIGHT) +
+                                   (trafficFactor * TRAFFIC_WEIGHT) +
+                                   (timeOfDayFactor * TIME_OF_DAY_WEIGHT) +
+                                   (seasonalFactor * SEASONAL_WEIGHT) +
+                                   (roadConditionFactor * ROAD_CONDITION_WEIGHT);
+            
+            // Apply neural network prediction model (simplified version)
+            double locationEffect = 1.0;
+            if (!neuralNetWeights.empty() && fromLocation < neuralNetWeights.size() && 
+                toLocation < neuralNetWeights[fromLocation].size()) {
+                locationEffect = neuralNetWeights[fromLocation][toLocation];
+            }
+            
+            // Calculate adjusted distance - worse conditions = longer effective distance
+            double adjustmentFactor = 1.0 + (combinedFactor * locationEffect);
+            return static_cast<int>(actualDistance * adjustmentFactor);
+        }
+        
+        // Initialize the neural network weights for location-specific effects
+        void initializeNeuralNetwork(int numLocations) {
+            // Create a matrix of weights for each location pair
+            neuralNetWeights.resize(numLocations);
+            
+            for (int i = 0; i < numLocations; i++) {
+                neuralNetWeights[i].resize(numLocations);
+                for (int j = 0; j < numLocations; j++) {
+                    if (i == j) {
+                        neuralNetWeights[i][j] = 0.0; // No effect for same location
+                    } else {
+                        // Initialize with random weights between 0.8 and 1.2
+                        // In a real implementation, these would be trained on historical data
+                        neuralNetWeights[i][j] = 0.8 + ((rand() % 40) / 100.0);
+                    }
                 }
             }
         }
-    }
-    
-    // Generate a cache key for current conditions
-    string generateConditionKey() const {
-        // Create a key based on discretized environmental factors
-        string key = to_string(static_cast<int>(weatherFactor * 10)) + "_" +
-                    to_string(static_cast<int>(trafficFactor * 10)) + "_" +
-                    to_string(static_cast<int>(timeOfDayFactor * 10)) + "_" +
-                    to_string(static_cast<int>(seasonalFactor * 10)) + "_" +
-                    to_string(static_cast<int>(roadConditionFactor * 10));
-        return key;
-    }
-    
-    // Method to apply machine learning optimization to the route
-    vector<int> optimizeRoute(const vector<int>& candidateLocations, 
-                              WasteLocationManager* manager, 
-                              const vector<WasteLocation>& locations) {
-        // Check if we have a cached result for these conditions
-        string conditionKey = generateConditionKey();
-        if (pathCache.find(conditionKey) != pathCache.end()) {
-            return pathCache[conditionKey];
+        
+        // Generate a cache key for current conditions
+        string generateConditionKey() const {
+            // Create a key based on discretized environmental factors
+            string key = to_string(static_cast<int>(weatherFactor * 10)) + "_" +
+                        to_string(static_cast<int>(trafficFactor * 10)) + "_" +
+                        to_string(static_cast<int>(timeOfDayFactor * 10)) + "_" +
+                        to_string(static_cast<int>(seasonalFactor * 10)) + "_" +
+                        to_string(static_cast<int>(roadConditionFactor * 10));
+            return key;
         }
         
-        // Create a distance matrix with adjusted distances based on external factors
-        int n = candidateLocations.size();
-        vector<vector<int>> adjustedDistMatrix(n, vector<int>(n, 0));
-        
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < n; j++) {
-                int actualDistance = manager->getDistance(
-                    candidateLocations[i], candidateLocations[j]);
-                
-                adjustedDistMatrix[i][j] = getAdjustedDistance(
-                    actualDistance, candidateLocations[i], candidateLocations[j]);
+        // Method to apply machine learning optimization to the route
+        vector<int> optimizeRoute(const vector<int>& candidateLocations, 
+                                  WasteLocationManager* manager, 
+                                  const vector<WasteLocation>& locations) {
+            // Check if we have a cached result for these conditions
+            string conditionKey = generateConditionKey();
+            if (pathCache.find(conditionKey) != pathCache.end()) {
+                return pathCache[conditionKey];
             }
-        }
-        
-        // Apply a hybrid optimization algorithm combining aspects of TSP and greedy approaches
-        // with adaptations for external factors
-        
-        // Start with HQ (index 0)
-        vector<int> optimizedPath;
-        optimizedPath.push_back(candidateLocations[0]);
-        
-        // Track visited locations
-        vector<bool> visited(n, false);
-        visited[0] = true;
-        
-        int currentPos = 0; // Start at first location (HQ)
-        int remainingLocations = n - 1;
-        
-        // Apply a greedy approach with look-ahead and consideration of waste levels
-        while (remainingLocations > 0) {
-            int bestNextLocation = -1;
-            double bestScore = -1.0;
             
-            // Evaluate each unvisited location
-            for (int i = 1; i < n; i++) {
-                if (!visited[i]) {
-                    int locationIndex = candidateLocations[i];
+            // Create a distance matrix with adjusted distances based on external factors
+            int n = candidateLocations.size();
+            vector<vector<int>> adjustedDistMatrix(n, vector<int>(n, 0));
+            
+            for (int i = 0; i < n; i++) {
+                for (int j = 0; j < n; j++) {
+                    int actualDistance = manager->getDistance(
+                        candidateLocations[i], candidateLocations[j]);
                     
-                    // Calculate a score based on:
-                    // 1. Adjusted distance (lower is better)
-                    // 2. Waste level (higher is better)
-                    // 3. Look-ahead potential (evaluate potential next stops)
-                    
-                    double distanceScore = 1000.0 / (1.0 + adjustedDistMatrix[currentPos][i]);
-                    double wasteScore = locations[locationIndex].getWasteLevel() * 10;
-                    
-                    // Look-ahead: evaluate potential next locations after this one
-                    double lookAheadScore = 0.0;
-                    int lookAheadCount = 0;
-                    
-                    for (int j = 1; j < n; j++) {
-                        if (!visited[j] && j != i) {
-                            // Add a small score component based on proximity of next potential locations
-                            lookAheadScore += 500.0 / (1.0 + adjustedDistMatrix[i][j]);
-                            lookAheadCount++;
-                            
-                            // Limit look-ahead to 3 locations for performance
-                            if (lookAheadCount >= 3) break;
+                    adjustedDistMatrix[i][j] = getAdjustedDistance(
+                        actualDistance, candidateLocations[i], candidateLocations[j]);
+                }
+            }
+            
+            // Apply a hybrid optimization algorithm combining aspects of TSP and greedy approaches
+            // with adaptations for external factors
+            
+            // Start with HQ (index 0)
+            vector<int> optimizedPath;
+            optimizedPath.push_back(candidateLocations[0]);
+            
+            // Track visited locations
+            vector<bool> visited(n, false);
+            visited[0] = true;
+            
+            int currentPos = 0; // Start at first location (HQ)
+            int remainingLocations = n - 1;
+            
+            // Apply a greedy approach with look-ahead and consideration of waste levels
+            while (remainingLocations > 0) {
+                int bestNextLocation = -1;
+                double bestScore = -1.0;
+                
+                // Evaluate each unvisited location
+                for (int i = 1; i < n; i++) {
+                    if (!visited[i]) {
+                        int locationIndex = candidateLocations[i];
+                        
+                        // Calculate a score based on:
+                        // 1. Adjusted distance (lower is better)
+                        // 2. Waste level (higher is better)
+                        // 3. Look-ahead potential (evaluate potential next stops)
+                        
+                        double distanceScore = 1000.0 / (1.0 + adjustedDistMatrix[currentPos][i]);
+                        double wasteScore = locations[locationIndex].getWasteLevel() * 10;
+                        
+                        // Look-ahead: evaluate potential next locations after this one
+                        double lookAheadScore = 0.0;
+                        int lookAheadCount = 0;
+                        
+                        for (int j = 1; j < n; j++) {
+                            if (!visited[j] && j != i) {
+                                // Add a small score component based on proximity of next potential locations
+                                lookAheadScore += 500.0 / (1.0 + adjustedDistMatrix[i][j]);
+                                lookAheadCount++;
+                                
+                                // Limit look-ahead to 3 locations for performance
+                                if (lookAheadCount >= 3) break;
+                            }
+                        }
+                        
+                        // Normalize look-ahead score
+                        if (lookAheadCount > 0) {
+                            lookAheadScore /= lookAheadCount;
+                        }
+                        
+                        // Combined score with weights
+                        double score = (distanceScore * 0.5) + (wasteScore * 0.3) + (lookAheadScore * 0.2);
+                        
+                        // Update best location if this is better
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestNextLocation = i;
                         }
                     }
-                    
-                    // Normalize look-ahead score
-                    if (lookAheadCount > 0) {
-                        lookAheadScore /= lookAheadCount;
-                    }
-                    
-                    // Combined score with weights
-                    double score = (distanceScore * 0.5) + (wasteScore * 0.3) + (lookAheadScore * 0.2);
-                    
-                    // Update best location if this is better
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestNextLocation = i;
-                    }
+                }
+                
+                // Add the best location to the path
+                if (bestNextLocation != -1) {
+                    optimizedPath.push_back(candidateLocations[bestNextLocation]);
+                    visited[bestNextLocation] = true;
+                    currentPos = bestNextLocation;
+                    remainingLocations--;
+                } else {
+                    // Fallback - shouldn't happen with complete graph
+                    break;
                 }
             }
             
-            // Add the best location to the path
-            if (bestNextLocation != -1) {
-                optimizedPath.push_back(candidateLocations[bestNextLocation]);
-                visited[bestNextLocation] = true;
-                currentPos = bestNextLocation;
-                remainingLocations--;
+            // Return to HQ
+            optimizedPath.push_back(candidateLocations[0]);
+            
+            // Cache the result
+            pathCache[conditionKey] = optimizedPath;
+            
+            return optimizedPath;
+        }
+        
+        // Save and report environmental impact information
+        void saveEnvironmentalImpact(const string& filename, const RouteResults& results,
+                                     WasteLocationManager* manager) {
+            ofstream outFile(filename);
+            
+            if (!outFile) {
+                cerr << "Cannot open file: " << filename << endl;
+                return;
+            }
+            
+            // Calculate environmental impact metrics
+            double fuelSaved = calculateFuelSavings(results);
+            double carbonReduction = fuelSaved * 2.3; // kg CO2 per liter of fuel
+            double timeReduction = calculateTimeReduction(results);
+            
+            outFile << "Environmental Impact Report\n";
+            outFile << "===================================\n\n";
+            
+            outFile << "External Factors Analysis:\n";
+            outFile << "- Weather Condition Factor: " << fixed << setprecision(2) << weatherFactor 
+                    << " (Weight: " << WEATHER_WEIGHT << ")\n";
+            outFile << "- Traffic Congestion Factor: " << trafficFactor 
+                    << " (Weight: " << TRAFFIC_WEIGHT << ")\n";
+            outFile << "- Time of Day Factor: " << timeOfDayFactor 
+                    << " (Weight: " << TIME_OF_DAY_WEIGHT << ")\n";
+            outFile << "- Seasonal Factor: " << seasonalFactor 
+                    << " (Weight: " << SEASONAL_WEIGHT << ")\n";
+            outFile << "- Road Condition Factor: " << roadConditionFactor 
+                    << " (Weight: " << ROAD_CONDITION_WEIGHT << ")\n\n";
+            
+            outFile << "Optimization Benefits:\n";
+            outFile << "- Estimated Fuel Savings: " << fixed << setprecision(2) << fuelSaved << " liters\n";
+            outFile << "- Estimated Carbon Reduction: " << carbonReduction << " kg CO2\n";
+            outFile << "- Estimated Time Savings: " << timeReduction << " minutes\n\n";
+            
+            outFile << "Recommendations:\n";
+            if (weatherFactor > 0.6) {
+                outFile << "- Consider rescheduling non-urgent collections due to adverse weather\n";
+            }
+            if (trafficFactor > 0.7) {
+                outFile << "- Consider adjusting collection time to avoid peak traffic periods\n";
+            }
+            if (timeOfDayFactor > 0.6) {
+                outFile << "- Recommended time window adjustment to optimize daylight operations\n";
+            }
+            
+            outFile.close();
+        }
+        
+        // Calculate approximate fuel savings compared to non-optimized route
+        double calculateFuelSavings(const RouteResults& results) const {
+            // Calculate baseline fuel usage (non-optimized)
+            vector<WasteLocation> locations;
+            double baselineFuel = results.totalDistance * 0.15; // Liters per km (approximate)
+            
+            // Estimate savings based on optimization factors
+            double optimizationEffect = 1.0 - ((weatherFactor * WEATHER_WEIGHT) +
+                                             (trafficFactor * TRAFFIC_WEIGHT) +
+                                             (timeOfDayFactor * TIME_OF_DAY_WEIGHT));
+            
+            // Calculate savings (10-25% depending on optimization)
+            double savingsRate = 0.10 + (optimizationEffect * 0.15);
+            return baselineFuel * savingsRate;
+        }
+        
+        // Calculate approximate time savings
+        double calculateTimeReduction(const RouteResults& results) const {
+            // Baseline time (minutes)
+            double baselineTime = results.totalTime;
+            
+            // Estimate time savings based on optimization factors, especially traffic
+            double trafficEffect = 1.0 - (trafficFactor * 0.8);
+            double timeEffect = 1.0 - (timeOfDayFactor * 0.5);
+            
+            // Calculate time savings rate (5-30% depending on factors)
+            double savingsRate = 0.05 + (trafficEffect * 0.15) + (timeEffect * 0.10);
+            
+            return baselineTime * savingsRate;
+        }
+        
+        // Load historical external factor data (or initialize if none exists)
+        void loadHistoricalData() {
+            ifstream inFile("external_factors_history.dat");
+            
+            if (inFile) {
+                string locationName;
+                double weather, traffic, timeOfDay, seasonal, road;
+                
+                while (inFile >> locationName >> weather >> traffic >> timeOfDay >> seasonal >> road) {
+                    vector<double> factors = {weather, traffic, timeOfDay, seasonal, road};
+                    historicalData[locationName] = factors;
+                }
             } else {
-                // Fallback - shouldn't happen with complete graph
-                break;
+                // Initialize with default values if no file exists
+                historicalData.clear();
             }
         }
         
-        // Return to HQ
-        optimizedPath.push_back(candidateLocations[0]);
-        
-        // Cache the result
-        pathCache[conditionKey] = optimizedPath;
-        
-        return optimizedPath;
-    }
-    
-    // Save and report environmental impact information
-    void saveEnvironmentalImpact(const string& filename, const RouteResults& results,
-                                 WasteLocationManager* manager) {
-        ofstream outFile(filename);
-        
-        if (!outFile) {
-            cerr << "Cannot open file: " << filename << endl;
-            return;
-        }
-        
-        // Calculate environmental impact metrics
-        double fuelSaved = calculateFuelSavings(results);
-        double carbonReduction = fuelSaved * 2.3; // kg CO2 per liter of fuel
-        double timeReduction = calculateTimeReduction(results);
-        
-        outFile << "Environmental Impact Report\n";
-        outFile << "===================================\n\n";
-        
-        outFile << "External Factors Analysis:\n";
-        outFile << "- Weather Condition Factor: " << fixed << setprecision(2) << weatherFactor 
-                << " (Weight: " << WEATHER_WEIGHT << ")\n";
-        outFile << "- Traffic Congestion Factor: " << trafficFactor 
-                << " (Weight: " << TRAFFIC_WEIGHT << ")\n";
-        outFile << "- Time of Day Factor: " << timeOfDayFactor 
-                << " (Weight: " << TIME_OF_DAY_WEIGHT << ")\n";
-        outFile << "- Seasonal Factor: " << seasonalFactor 
-                << " (Weight: " << SEASONAL_WEIGHT << ")\n";
-        outFile << "- Road Condition Factor: " << roadConditionFactor 
-                << " (Weight: " << ROAD_CONDITION_WEIGHT << ")\n\n";
-        
-        outFile << "Optimization Benefits:\n";
-        outFile << "- Estimated Fuel Savings: " << fixed << setprecision(2) << fuelSaved << " liters\n";
-        outFile << "- Estimated Carbon Reduction: " << carbonReduction << " kg CO2\n";
-        outFile << "- Estimated Time Savings: " << timeReduction << " minutes\n\n";
-        
-        outFile << "Recommendations:\n";
-        if (weatherFactor > 0.6) {
-            outFile << "- Consider rescheduling non-urgent collections due to adverse weather\n";
-        }
-        if (trafficFactor > 0.7) {
-            outFile << "- Consider adjusting collection time to avoid peak traffic periods\n";
-        }
-        if (timeOfDayFactor > 0.6) {
-            outFile << "- Recommended time window adjustment to optimize daylight operations\n";
-        }
-        
-        outFile.close();
-    }
-    
-    // Calculate approximate fuel savings compared to non-optimized route
-    double calculateFuelSavings(const RouteResults& results) const {
-        // Calculate baseline fuel usage (non-optimized)
-        vector<WasteLocation> locations;
-        double baselineFuel = results.totalDistance * 0.15; // Liters per km (approximate)
-        
-        // Estimate savings based on optimization factors
-        double optimizationEffect = 1.0 - ((weatherFactor * WEATHER_WEIGHT) +
-                                         (trafficFactor * TRAFFIC_WEIGHT) +
-                                         (timeOfDayFactor * TIME_OF_DAY_WEIGHT));
-        
-        // Calculate savings (10-25% depending on optimization)
-        double savingsRate = 0.10 + (optimizationEffect * 0.15);
-        return baselineFuel * savingsRate;
-    }
-    
-    // Calculate approximate time savings
-    double calculateTimeReduction(const RouteResults& results) const {
-        // Baseline time (minutes)
-        double baselineTime = results.totalTime;
-        
-        // Estimate time savings based on optimization factors, especially traffic
-        double trafficEffect = 1.0 - (trafficFactor * 0.8);
-        double timeEffect = 1.0 - (timeOfDayFactor * 0.5);
-        
-        // Calculate time savings rate (5-30% depending on factors)
-        double savingsRate = 0.05 + (trafficEffect * 0.15) + (timeEffect * 0.10);
-        
-        return baselineTime * savingsRate;
-    }
-    
-    // Load historical external factor data (or initialize if none exists)
-    void loadHistoricalData() {
-        ifstream inFile("external_factors_history.dat");
-        
-        if (inFile) {
-            string locationName;
-            double weather, traffic, timeOfDay, seasonal, road;
+        // Save current external factors to historical data
+        void updateHistoricalData(const vector<WasteLocation>& locations) {
+            // Update the historical data with current values
+            for (const auto& location : locations) {
+                string name = location.getName();
+                vector<double> factors = {weatherFactor, trafficFactor, timeOfDayFactor, 
+                                        seasonalFactor, roadConditionFactor};
+                historicalData[name] = factors;
+            }
             
-            while (inFile >> locationName >> weather >> traffic >> timeOfDay >> seasonal >> road) {
-                vector<double> factors = {weather, traffic, timeOfDay, seasonal, road};
-                historicalData[locationName] = factors;
-            }
-        } else {
-            // Initialize with default values if no file exists
-            historicalData.clear();
-        }
-    }
-    
-    // Save current external factors to historical data
-    void updateHistoricalData(const vector<WasteLocation>& locations) {
-        // Update the historical data with current values
-        for (const auto& location : locations) {
-            string name = location.getName();
-            vector<double> factors = {weatherFactor, trafficFactor, timeOfDayFactor, 
-                                    seasonalFactor, roadConditionFactor};
-            historicalData[name] = factors;
-        }
-        
-        // Save to file
-        ofstream outFile("external_factors_history.dat");
-        
-        if (outFile) {
-            for (const auto& entry : historicalData) {
-                outFile << entry.first;
-                for (double factor : entry.second) {
-                    outFile << " " << factor;
-                }
-                outFile << endl;
-            }
-        }
-    }
-
-public:
-    ExternalFactorsRoute() {
-        // Initialize factors with current conditions
-        weatherFactor = getCurrentWeatherFactor();
-        trafficFactor = getCurrentTrafficFactor();
-        timeOfDayFactor = getTimeOfDayFactor();
-        seasonalFactor = getSeasonalFactor();
-        roadConditionFactor = getRoadConditionFactor();
-        
-        // Load historical data
-        loadHistoricalData();
-        
-        // Initialize path cache
-        pathCache.clear();
-    }
-    
-    ~ExternalFactorsRoute() {
-        // Save historical data when destroyed
-        if (!historicalData.empty()) {
+            // Save to file
             ofstream outFile("external_factors_history.dat");
+            
             if (outFile) {
                 for (const auto& entry : historicalData) {
                     outFile << entry.first;
@@ -2429,100 +2446,131 @@ public:
                 }
             }
         }
-    }
     
-    RouteResults calculateRoute(WasteLocationManager* manager) override {
-        RouteResults results;
-        results.totalDistance = 0;
-        results.totalTime = 0;
-        results.totalFuel = 0;
-        results.totalWage = 0;
-        
-        vector<WasteLocation>& locations = manager->getLocations();
-        
-        // Update the external factors based on current time and conditions
-        weatherFactor = getCurrentWeatherFactor();
-        trafficFactor = getCurrentTrafficFactor();
-        timeOfDayFactor = getTimeOfDayFactor();
-        seasonalFactor = getSeasonalFactor();
-        roadConditionFactor = getRoadConditionFactor();
-        
-        // Initialize neural network if not already done
-        if (neuralNetWeights.empty()) {
-            initializeNeuralNetwork(locations.size());
+    public:
+        ExternalFactorsRoute() {
+            // Initialize factors with current conditions
+            weatherFactor = getCurrentWeatherFactor();
+            trafficFactor = getCurrentTrafficFactor();
+            timeOfDayFactor = getTimeOfDayFactor();
+            seasonalFactor = getSeasonalFactor();
+            roadConditionFactor = getRoadConditionFactor();
+            
+            // Load historical data
+            loadHistoricalData();
+            
+            // Initialize path cache
+            pathCache.clear();
         }
         
-        // Create a list of locations to visit based on waste levels
-        // Criteria: waste level >= 25% (like TSP, but with external factor optimization)
-        vector<int> locationsToVisit;
-        locationsToVisit.push_back(0); // Add HQ
-        
-        for (size_t i = 1; i < locations.size(); ++i) {
-            if (locations[i].getWasteLevel() >= 25) {
-                locationsToVisit.push_back(i);
+        ~ExternalFactorsRoute() {
+            // Save historical data when destroyed
+            if (!historicalData.empty()) {
+                ofstream outFile("external_factors_history.dat");
+                if (outFile) {
+                    for (const auto& entry : historicalData) {
+                        outFile << entry.first;
+                        for (double factor : entry.second) {
+                            outFile << " " << factor;
+                        }
+                        outFile << endl;
+                    }
+                }
             }
         }
         
-        // If only HQ exists in the list, no locations to visit
-        if (locationsToVisit.size() <= 1) {
-            results.path.clear();
+        RouteResults calculateRoute(WasteLocationManager* manager) override {
+            RouteResults results;
+            results.totalDistance = 0;
+            results.totalTime = 0;
+            results.totalFuel = 0;
+            results.totalWage = 0;
+            
+            vector<WasteLocation>& locations = manager->getLocations();
+            
+            // Update the external factors based on current time and conditions
+            weatherFactor = getCurrentWeatherFactor();
+            trafficFactor = getCurrentTrafficFactor();
+            timeOfDayFactor = getTimeOfDayFactor();
+            seasonalFactor = getSeasonalFactor();
+            roadConditionFactor = getRoadConditionFactor();
+            
+            // Initialize neural network if not already done
+            if (neuralNetWeights.empty()) {
+                initializeNeuralNetwork(locations.size());
+            }
+            
+            // Create a list of locations to visit based on waste levels
+            // Criteria: waste level >= 25% (like TSP, but with external factor optimization)
+            vector<int> locationsToVisit;
+            locationsToVisit.push_back(0); // Add HQ
+            
+            for (size_t i = 1; i < locations.size(); ++i) {
+                if (locations[i].getWasteLevel() >= 25) {
+                    locationsToVisit.push_back(i);
+                }
+            }
+            
+            // If only HQ exists in the list, no locations to visit
+            if (locationsToVisit.size() <= 1) {
+                results.path.clear();
+                return results;
+            }
+            
+            // Apply the optimization algorithm to get the optimal path
+            vector<int> optimizedPath = optimizeRoute(locationsToVisit, manager, locations);
+            
+            // Set the results path based on the optimized path
+            results.path = optimizedPath;
+            
+            // Calculate costs using the original distance matrix (not adjusted distances)
+            for (size_t i = 0; i < results.path.size() - 1; ++i) {
+                int from = results.path[i];
+                int to = results.path[i + 1];
+                int legDistance = manager->getDistance(from, to);
+                
+                // Apply external factor adjustments to time calculation
+                double combinedFactor = (weatherFactor * WEATHER_WEIGHT) +
+                                     (trafficFactor * TRAFFIC_WEIGHT) +
+                                     (timeOfDayFactor * TIME_OF_DAY_WEIGHT) +
+                                     (seasonalFactor * SEASONAL_WEIGHT) +
+                                     (roadConditionFactor * ROAD_CONDITION_WEIGHT);
+                
+                // Adjust time based on external factors (worse conditions = longer time)
+                double timeAdjustment = 1.0 + (combinedFactor * 0.5);
+                double legTime = legDistance * TIME_PER_KM * timeAdjustment;
+                
+                // Adjust fuel based on external factors (worse conditions = more fuel)
+                double fuelAdjustment = 1.0 + (combinedFactor * 0.3);
+                double legFuel = legDistance * FUEL_COST_PER_KM * fuelAdjustment;
+                
+                double legWage = (legTime / 60) * WAGE_PER_HOUR;
+                
+                results.totalDistance += legDistance;
+                results.totalTime += legTime;
+                results.totalFuel += legFuel;
+                results.totalWage += legWage;
+            }
+            
+            // Update historical data with current external factors
+            updateHistoricalData(locations);
+            
+            // Generate environmental impact report
+            saveEnvironmentalImpact("environmental_impact.txt", results, manager);
+            
             return results;
         }
         
-        // Apply the optimization algorithm to get the optimal path
-        vector<int> optimizedPath = optimizeRoute(locationsToVisit, manager, locations);
-        
-        // Set the results path based on the optimized path
-        results.path = optimizedPath;
-        
-        // Calculate costs using the original distance matrix (not adjusted distances)
-        for (size_t i = 0; i < results.path.size() - 1; ++i) {
-            int from = results.path[i];
-            int to = results.path[i + 1];
-            int legDistance = manager->getDistance(from, to);
-            
-            // Apply external factor adjustments to time calculation
-            double combinedFactor = (weatherFactor * WEATHER_WEIGHT) +
-                                 (trafficFactor * TRAFFIC_WEIGHT) +
-                                 (timeOfDayFactor * TIME_OF_DAY_WEIGHT) +
-                                 (seasonalFactor * SEASONAL_WEIGHT) +
-                                 (roadConditionFactor * ROAD_CONDITION_WEIGHT);
-            
-            // Adjust time based on external factors (worse conditions = longer time)
-            double timeAdjustment = 1.0 + (combinedFactor * 0.5);
-            double legTime = legDistance * TIME_PER_KM * timeAdjustment;
-            
-            // Adjust fuel based on external factors (worse conditions = more fuel)
-            double fuelAdjustment = 1.0 + (combinedFactor * 0.3);
-            double legFuel = legDistance * FUEL_COST_PER_KM * fuelAdjustment;
-            
-            double legWage = (legTime / 60) * WAGE_PER_HOUR;
-            
-            results.totalDistance += legDistance;
-            results.totalTime += legTime;
-            results.totalFuel += legFuel;
-            results.totalWage += legWage;
+        // Get current external factors for display
+        void getExternalFactors(double& weather, double& traffic, double& timeOfDay, 
+                              double& seasonal, double& road) const {
+            weather = weatherFactor;
+            traffic = trafficFactor;
+            timeOfDay = timeOfDayFactor;
+            seasonal = seasonalFactor;
+            road = roadConditionFactor;
         }
-        
-        // Update historical data with current external factors
-        updateHistoricalData(locations);
-        
-        // Generate environmental impact report
-        saveEnvironmentalImpact("environmental_impact.txt", results, manager);
-        
-        return results;
-    }
-    
-    // Get current external factors for display
-    void getExternalFactors(double& weather, double& traffic, double& timeOfDay, 
-                          double& seasonal, double& road) const {
-        weather = weatherFactor;
-        traffic = trafficFactor;
-        timeOfDay = timeOfDayFactor;
-        seasonal = seasonalFactor;
-        road = roadConditionFactor;
-    }
-};
+    };
 
 /**
  * @class CollectionRoute
@@ -2647,22 +2695,24 @@ private:
     
     void displayMenu() {
         cout << "\nMain Menu:" << endl;
-        cout << "1. Generate Random Waste Levels" << endl;
+         cout << "1. Generate Random Waste Levels" << endl;
         cout << "2. View Waste Locations Information" << endl;
         cout << "3. Select Route Algorithm" << endl;
         cout << "4. Execute Selected Route" << endl;
         cout << "5. Save Locations Info to File" << endl;
         cout << "6. View AI Predictions" << endl;
         cout << "7. Compare Route Costs" << endl;
-        cout << "8. Waste Pattern Analytics Dashboard" << endl;
-        cout << "9. Help" << endl;
-        cout << "10. Save All Data" << endl;
-        cout << "11. Load Data" << endl;
-        cout << "12. Delete Saved Data" << endl;
+        cout << "8. Select Most Cost-Effective Route" << endl;
+        cout << "9. Waste Pattern Analytics Dashboard" << endl;
+        cout << "10. View Collection History" << endl;
+        cout << "11. Help" << endl;
+        cout << "12. Save ALL Data" << endl; 
+        cout << "13. Load ALL Data" << endl; 
+        cout << "14. Delete ALL Data" << endl; 
         cout << "0. Exit" << endl;
         cout << "\nCurrent Route Algorithm: " << getCurrentRouteAlgorithm() << endl;
         cout << "\nEnter your choice: ";
-    }
+}
     
     void selectRouteAlgorithm() {
         system("cls");
@@ -2810,10 +2860,12 @@ private:
         displayHeader();
         
         setTextColor(COLOR_BLUE);
-        cout << "\n==============================================" << endl;
-        cout << "          HELP DOCUMENTATION                  " << endl;
-        cout << "==============================================" << endl;
+        cout << "\n===============================================================" << endl;
+        cout << "                   HELP DOCUMENTATION                          " << endl;
+        cout << "===============================================================" << endl;
         setTextColor(COLOR_WHITE);
+        
+        cout << "\n----- CORE FEATURES -----" << endl;
         
         cout << "\n1. Generate Random Waste Levels:" << endl;
         setTextColor(COLOR_YELLOW);
@@ -2832,7 +2884,7 @@ private:
         
         cout << "\n3. Select Route Algorithm:" << endl;
         setTextColor(COLOR_YELLOW);
-        cout << "   Choose from 5 different routing algorithms:" << endl;
+        cout << "   Choose from 7 different routing algorithms:" << endl;
         cout << "   - Regular: Visits locations with waste level ≥40% within 30km" << endl;
         cout << "   - Optimized: Visits locations with waste level ≥60% within 20km" << endl;
         cout << "   - Greedy: Visits locations with waste level ≥30%, always choosing" << endl;
@@ -2844,6 +2896,7 @@ private:
         cout << "   - RL: Visits locations with waste level ≥30% using Reinforcement" << endl;
         cout << "     Learning to optimize the route based on past experiences" << endl;
         cout << "   - External Factors AI-based: Optimizes routes based on external factors" << endl;
+        cout << "     like weather, traffic, time of day, and seasonal variations" << endl;
         setTextColor(COLOR_WHITE);
         
         cout << "\n4. Execute Selected Route:" << endl;
@@ -2851,7 +2904,10 @@ private:
         cout << "   Calculates and displays the optimized collection route using the" << endl;
         cout << "   selected algorithm. Shows distance, time, fuel cost, and wage cost." << endl;
         cout << "   The route information is also saved to 'route_info.txt'." << endl;
+        cout << "   You can also visualize the route on a map after execution." << endl;
         setTextColor(COLOR_WHITE);
+        
+        cout << "\n----- ANALYTICS & AI FEATURES -----" << endl;
         
         cout << "\n5. Save Locations Info to File:" << endl;
         setTextColor(COLOR_YELLOW);
@@ -2872,8 +2928,17 @@ private:
         cout << "   showing potential savings by switching to the most cost-effective route." << endl;
         cout << "   You need to execute at least 2 different routes to use this feature." << endl;
         setTextColor(COLOR_WHITE);
-        
-        cout << "\n8. Waste Pattern Analytics Dashboard:" << endl;
+    
+        cout << "\n8. Select Most Cost-Effective Route:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Automatically selects the most cost-effective route strategy" << endl;
+        cout << "   based on previous route comparisons and simulates waste collection." << endl;
+        cout << "   This feature requires executing at least 2 different routes to compare costs." << endl;
+        cout << "   After selecting the most efficient route, you can simulate waste collection," << endl;
+        cout << "   which will set the waste levels of visited locations to 0." << endl;
+        setTextColor(COLOR_WHITE);
+    
+        cout << "\n9. Waste Pattern Analytics Dashboard:" << endl;
         setTextColor(COLOR_YELLOW);
         cout << "   Comprehensive dashboard that analyzes historical waste data," << endl;
         cout << "   identifies patterns, and provides actionable insights including:" << endl;
@@ -2881,38 +2946,64 @@ private:
         cout << "   - Waste pattern classification" << endl;
         cout << "   - Trend visualization" << endl;
         cout << "   - Prioritized recommendations" << endl;
+        cout << "   - Visual map representation of waste locations and routes" << endl;
         setTextColor(COLOR_WHITE);
         
-        cout << "\n9. Help: Display this help information" << endl;
+        cout << "\n10. View Collection History:" << endl;
+        setTextColor(COLOR_YELLOW);
+        cout << "   Displays a detailed history of all waste collections performed," << endl;
+        cout << "   including dates, times, and amounts collected at each location." << endl;
+        cout << "   Options to export the collection history to a text file." << endl;
+        cout << "   This data is valuable for long-term waste trend analysis." << endl;
+        setTextColor(COLOR_WHITE);
         
-        cout << "\n10. Save All Data:" << endl;
+        cout << "\n----- DATA MANAGEMENT -----" << endl;
+        
+        cout << "\n12. Save ALL Data:" << endl;
         setTextColor(COLOR_YELLOW);
         cout << "   Saves all current waste data, including locations, waste levels," << endl;
-        cout << "   historical data, and distance matrix to a binary file." << endl;
-        cout << "   This allows you to restore your data when restarting the application." << endl;
+        cout << "   historical data, collection history, and distance matrix to a binary file." << endl;
+        cout << "   Creates a bundle file containing all supplementary data files." << endl;
+        cout << "   A manifest file is also created to track all saved components." << endl;
         setTextColor(COLOR_WHITE);
         
-        cout << "\n11. Load Data:" << endl;
+        cout << "\n13. Load ALL Data:" << endl;
         setTextColor(COLOR_YELLOW);
-        cout << "   Loads previously saved waste data from a binary file." << endl;
-        cout << "   This restores all locations, waste levels, historical data, and distances." << endl;
+        cout << "   Loads previously saved waste data from binary files." << endl;
+        cout << "   Options to load only core data or all data including supplementary files." << endl;
+        cout << "   This restores all locations, waste levels, historical data, and collection history." << endl;
         setTextColor(COLOR_WHITE);
         
-        cout << "\n12. Delete Saved Data:" << endl;
+        cout << "\n14. Delete ALL Data:" << endl;
         setTextColor(COLOR_YELLOW);
-        cout << "   Permanently deletes a saved data file." << endl;
+        cout << "   Permanently deletes saved data files." << endl;
+        cout << "   Options to delete only core data or all related data files." << endl;
         cout << "   Use with caution as this operation cannot be undone." << endl;
         setTextColor(COLOR_WHITE);
         
+        cout << "\n----- SYSTEM OPERATIONS -----" << endl;
+        
+        cout << "\n11. Help: Display this help information" << endl;
+        
         cout << "\n0. Exit: Close the application" << endl;
         
-        setTextColor(COLOR_GREEN);
-        cout << "\n=== ADDITIONAL INFORMATION ===" << endl;
+        cout << "\n----- ADDITIONAL INFORMATION -----" << endl;
         setTextColor(COLOR_YELLOW);
-        cout << "- Cost calculations include both fuel (RM 2.50/km) and driver wages (RM 10.00/hour)" << endl;
-        cout << "- Anomalies are detected when waste levels deviate significantly from historical trends" << endl;
-        cout << "- All routes begin and end at the Waste Collector HQ" << endl;
-        cout << "- Your data is saved to 'waste_data.dat' by default" << endl;
+        cout << "Cost calculations include both fuel (RM 2.50/km) and driver wages (RM 10.00/hour)" << endl;
+        cout << "Route comparisons help identify the most cost-effective collection strategy" << endl;
+        cout << "Anomalies are detected when waste levels deviate significantly from historical trends" << endl;
+        cout << "All routes begin and end at the Waste Collector HQ" << endl;
+        cout << "The External Factors route considers weather, traffic, time of day and seasonal variations" << endl;
+        cout << "The RL (Reinforcement Learning) route improves over time as more routes are executed" << endl;
+        cout << "Your data is saved to 'waste_data.dat' by default" << endl;
+        
+        setTextColor(COLOR_GREEN);
+        cout << "\n----- TIPS FOR OPTIMAL USE -----" << endl;
+        cout << "Execute multiple route types before comparing costs" << endl;
+        cout << "Check the analytics dashboard regularly to identify problematic locations" << endl;
+        cout << "Consider using the 'RL Route' for long-term optimization" << endl;
+        cout << "Always save your data before closing the application" << endl;
+        cout << "The External Factors route provides significant benefits during bad weather or traffic" << endl;
         setTextColor(COLOR_WHITE);
         
         cout << "\nPress any key to return to the main menu...";
@@ -2931,171 +3022,444 @@ private:
         system("cls");
         displayHeader();
         
-        cout << "\nSave Data Options:" << endl;
+        cout << "\nSave ALL Data Options:" << endl;  // Updated title
         cout << "1. Save to default file (" << locationManager->getLastSavedFilePath() << ")" << endl;
         cout << "2. Save to a custom file" << endl;
         cout << "3. Return to main menu" << endl;
         cout << "\nEnter your choice: ";
-        
-        int choice;
-        cin >> choice;
-        
-        switch (choice) {
-            case 1: {
-                // Save to default file
-                bool success = locationManager->saveDataToFile(true);
-                if (success) {
-                    cout << "\nData saved successfully to " << locationManager->getLastSavedFilePath() << endl;
-                }
-                system("pause");
-                break;
-            }
-            case 2: {
-                // Save to custom file
-                string filename;
-                cout << "Enter the filename to save to (e.g., mydata.dat): ";
-                cin >> filename;
-                
-                bool success = locationManager->saveDataToFile(true, filename);
-                if (success) {
-                    cout << "\nData saved successfully to " << filename << endl;
-                }
-                system("pause");
-                break;
-            }
-            case 3:
-                // Return to main menu
-                break;
-            default:
-                cout << "Invalid choice. Please try again." << endl;
-                system("pause");
-                break;
+    
+    int choice;
+    cin >> choice;
+    
+    string targetFilename;
+    
+    switch (choice) {
+        case 1: {
+            // Save to default file
+            targetFilename = locationManager->getLastSavedFilePath();
+            break;
         }
+        case 2: {
+            // Save to custom file
+            cout << "Enter the filename to save to (e.g., mydata.dat): ";
+            cin >> targetFilename;
+            break;
+        }
+        case 3:
+            // Return to main menu
+            return;
+        default:
+            cout << "Invalid choice. Please try again." << endl;
+            system("pause");
+            return;
     }
     
-    void loadData() {
-        system("cls");
-        displayHeader();
-        
-        cout << "\nLoad Data Options:" << endl;
-        cout << "1. Load from default file (" << locationManager->getLastSavedFilePath() << ")" << endl;
-        cout << "2. Load from a custom file" << endl;
-        cout << "3. Return to main menu" << endl;
-        cout << "\nEnter your choice: ";
-        
-        int choice;
-        cin >> choice;
-        
-        switch (choice) {
-            case 1: {
-                // Load from default file
-                if (!locationManager->dataFileExists()) {
-                    cout << "\nNo data file found at " << locationManager->getLastSavedFilePath() << endl;
-                    system("pause");
-                    break;
-                }
-                
-                if (confirmAction("This will overwrite current data. Continue?")) {
-                    bool success = locationManager->loadAllData();
-                    if (success) {
-                        cout << "\nData loaded successfully from " << locationManager->getLastSavedFilePath() << endl;
-                    }
-                }
-                system("pause");
-                break;
-            }
-            case 2: {
-                // Load from custom file
-                string filename;
-                cout << "Enter the filename to load from (e.g., mydata.dat): ";
-                cin >> filename;
-                
-                if (!locationManager->dataFileExists(filename)) {
-                    cout << "\nNo data file found at " << filename << endl;
-                    system("pause");
-                    break;
-                }
-                
-                if (confirmAction("This will overwrite current data. Continue?")) {
-                    bool success = locationManager->loadAllData(filename);
-                    if (success) {
-                        cout << "\nData loaded successfully from " << filename << endl;
-                    }
-                }
-                system("pause");
-                break;
-            }
-            case 3:
-                // Return to main menu
-                break;
-            default:
-                cout << "Invalid choice. Please try again." << endl;
-                system("pause");
-                break;
+    try {
+        UIHelper::displayProgressBar(0);
+        cout << "\nSaving ALL data files to " << targetFilename << "..." << endl;
+
+        // Save core waste location data first using the existing method
+        bool coreDataSaved = locationManager->saveDataToFile(true, targetFilename);
+        if (!coreDataSaved) {
+            throw WasteManagementException("Failed to save core waste location data");
         }
+        UIHelper::displayProgressBar(30);
+
+        // Create a manifest file to track all additional files
+        string manifestFilename = targetFilename + "_manifest.txt";
+        ofstream manifestFile(manifestFilename);
+        if (!manifestFile) {
+            throw FileOperationException("create", manifestFilename);
+        }
+        
+        // List of files to check and save
+        vector<string> filesToSave = {
+            "environmental_impact.txt",
+            "external_factors_history.dat",
+            "locations_info.txt",
+            "qtable.txt",
+            "route_info.txt",
+            "collection_history.txt",
+            "route_comparison.txt",         // Added route comparison file
+            "most_cost_effective_route.txt" // Added most cost-effective route file
+        };
+        
+        manifestFile << "Waste Management System - File Manifest\n";
+        manifestFile << "Created: " << __DATE__ << " " << __TIME__ << "\n";
+        manifestFile << "========================================\n\n";
+        manifestFile << "Core data file: " << targetFilename << "\n\n";
+        manifestFile << "Additional files:\n";
+        
+        int filesFound = 0;
+        int progress = 30;
+        int progressStep = 60 / filesToSave.size();
+        
+        // Create a comprehensive bundle file
+        string bundleFilename = targetFilename + "_bundle.txt";
+        ofstream bundleFile(bundleFilename, ios::binary);
+        if (!bundleFile) {
+            throw FileOperationException("create", bundleFilename);
+        }
+        
+        bundleFile << "WASTE_MANAGEMENT_SYSTEM_BUNDLE_START\n";
+        bundleFile << "VERSION: 1.0\n";
+        bundleFile << "CREATION_DATE: " << __DATE__ << " " << __TIME__ << "\n";
+        bundleFile << "FILE_COUNT: " << filesToSave.size() + 1 << "\n"; // +1 for core data
+        bundleFile << "========================================\n\n";
+        
+        // Save core file reference first
+        bundleFile << "FILE_START: " << targetFilename << "\n";
+        bundleFile << "FILE_TYPE: CORE_DATA\n";
+        bundleFile << "FILE_END\n\n";
+        
+        // Check each file and add to the bundle
+        for (const string& filename : filesToSave) {
+            ifstream fileCheck(filename);
+            progress += progressStep;
+            UIHelper::displayProgressBar(progress);
+            
+            if (fileCheck) {
+                // File exists, add to manifest
+                filesFound++;
+                manifestFile << "- " << filename << " (Included)\n";
+                
+                // Add file content to bundle
+                bundleFile << "FILE_START: " << filename << "\n";
+                bundleFile << "FILE_TYPE: " << (filename.substr(filename.find_last_of(".") + 1) == "dat" ? "BINARY" : "TEXT") << "\n";
+                bundleFile << "CONTENT_START\n";
+                
+                // Read and write the entire file content
+                fileCheck.seekg(0, ios::end);
+                size_t fileSize = fileCheck.tellg();
+                fileCheck.seekg(0, ios::beg);
+                
+                char* buffer = new char[fileSize];
+                fileCheck.read(buffer, fileSize);
+                bundleFile.write(buffer, fileSize);
+                delete[] buffer;
+                
+                bundleFile << "\nCONTENT_END\n";
+                bundleFile << "FILE_END\n\n";
+            } else {
+                manifestFile << "- " << filename << " (Not found)\n";
+            }
+        }
+        
+        bundleFile << "WASTE_MANAGEMENT_SYSTEM_BUNDLE_END\n";
+        bundleFile.close();
+        
+        manifestFile << "\nTotal files found and saved: " << filesFound + 1 << " (including core data)\n"; 
+        manifestFile << "Bundle file: " << bundleFilename << "\n";
+        manifestFile.close();
+        
+        UIHelper::displayProgressBar(100);
+        cout << endl;
+        UIHelper::displaySuccess("All data saved successfully!");
+        cout << "- Core data saved to: " << targetFilename << endl;
+        cout << "- Additional files bundled in: " << bundleFilename << endl;
+        cout << "- Manifest created at: " << manifestFilename << endl;
+        cout << "Total files saved: " << filesFound + 1 << " (including core data)" << endl;
+    }
+    catch (const exception& e) {
+        UIHelper::displayError(e.what());
     }
     
-    void deleteData() {
-        system("cls");
-        displayHeader();
+    system("pause");
+}
+
+//loadData function to handle the bundle
+void loadData() {
+    system("cls");
+    displayHeader();
+    
+    cout << "\nLoad ALL Data Options:" << endl;  // Updated title
+    cout << "1. Load core data only (from " << locationManager->getLastSavedFilePath() << ")" << endl;
+    cout << "2. Load ALL data (core + additional files from bundle)" << endl;  // Clearer option
+    cout << "3. Load from a custom file" << endl;
+    cout << "4. Return to main menu" << endl;
+    cout << "\nEnter your choice: ";
+    
+    int choice;
+    cin >> choice;
+    
+    string targetFilename;
+    bool loadBundle = false;
+    
+    switch (choice) {
+        case 1: {
+            // Load core data only
+            targetFilename = locationManager->getLastSavedFilePath();
+            loadBundle = false;
+            break;
+        }
+        case 2: {
+            // Load all data including bundle
+            targetFilename = locationManager->getLastSavedFilePath();
+            loadBundle = true;
+            break;
+        }
+        case 3: {
+            // Load from custom file
+            cout << "Enter the filename to load from: ";
+            cin >> targetFilename;
+            
+            cout << "Would you like to load additional files from bundle? (y/n): ";
+            char bundleChoice;
+            cin >> bundleChoice;
+            loadBundle = (bundleChoice == 'y' || bundleChoice == 'Y');
+            break;
+        }
+        case 4:
+            // Return to main menu
+            return;
+        default:
+            cout << "Invalid choice. Please try again." << endl;
+            system("pause");
+            return;
+    }
+    
+    try {
+        if (!locationManager->dataFileExists(targetFilename)) {
+            throw FileOperationException("find", targetFilename);
+        }
         
-        cout << "\nDelete Data Options:" << endl;
-        cout << "1. Delete default file (" << locationManager->getLastSavedFilePath() << ")" << endl;
-        cout << "2. Delete a custom file" << endl;
-        cout << "3. Return to main menu" << endl;
-        cout << "\nEnter your choice: ";
-        
-        int choice;
-        cin >> choice;
-        
-        switch (choice) {
-            case 1: {
-                // Delete default file
-                if (!locationManager->dataFileExists()) {
-                    cout << "\nNo data file found at " << locationManager->getLastSavedFilePath() << endl;
+        if (confirmAction("This will overwrite current data. Continue?")) {
+            // First load the core data
+            UIHelper::displayProgressBar(0);
+            cout << "\nLoading core data from " << targetFilename << "..." << endl;
+            
+            bool coreDataLoaded = locationManager->loadAllData(targetFilename);
+            if (!coreDataLoaded) {
+                throw WasteManagementException("Failed to load core waste location data");
+            }
+            UIHelper::displayProgressBar(50);
+            
+            // If bundle loading is requested, load the additional files
+            if (loadBundle) {
+                string bundleFilename = targetFilename + "_bundle.txt";
+                ifstream bundleFile(bundleFilename, ios::binary);
+                
+                if (!bundleFile) {
+                    UIHelper::displayWarning("Bundle file not found: " + bundleFilename);
+                    UIHelper::displayWarning("Only core data was loaded");
+                    UIHelper::displayProgressBar(100);
+                    cout << endl;
+                    UIHelper::displaySuccess("Core data loaded successfully from " + targetFilename);
                     system("pause");
-                    break;
+                    return;
                 }
                 
-                if (confirmAction("Are you sure you want to delete this file? This cannot be undone.")) {
-                    bool success = locationManager->deleteDataFile();
-                    if (success) {
-                        cout << "\nData file deleted successfully" << endl;
+                cout << "Loading additional files from bundle..." << endl;
+                
+                string line;
+                string currentFile;
+                bool inFile = false;
+                bool inContent = false;
+                ofstream outputFile;
+                
+                // Skip header until we find the first FILE_START
+                while (getline(bundleFile, line)) {
+                    if (line.find("FILE_START:") != string::npos) {
+                        // Extract filename
+                        currentFile = line.substr(line.find(":") + 1);
+                        // Trim whitespace
+                        currentFile.erase(0, currentFile.find_first_not_of(" \t"));
+                        currentFile.erase(currentFile.find_last_not_of(" \t") + 1);
+                        
+                        // Skip the core data file which we've already loaded
+                        if (currentFile == targetFilename) {
+                            inFile = true;
+                            inContent = false;
+                            continue;
+                        }
+                        
+                        cout << "Extracting: " << currentFile << endl;
+                        outputFile.open(currentFile, ios::binary);
+                        if (!outputFile) {
+                            UIHelper::displayWarning("Could not create file: " + currentFile);
+                            inFile = true;
+                            inContent = false;
+                            continue;
+                        }
+                        
+                        inFile = true;
+                        inContent = false;
+                    }
+                    else if (inFile && line.find("CONTENT_START") != string::npos) {
+                        inContent = true;
+                    }
+                    else if (inFile && line.find("CONTENT_END") != string::npos) {
+                        inContent = false;
+                    }
+                    else if (inFile && line.find("FILE_END") != string::npos) {
+                        inFile = false;
+                        inContent = false;
+                        if (outputFile.is_open()) {
+                            outputFile.close();
+                        }
+                    }
+                    else if (inFile && inContent) {
+                        // Write content to the file
+                        if (outputFile.is_open()) {
+                            outputFile << line << endl;
+                        }
                     }
                 }
-                system("pause");
-                break;
-            }
-            case 2: {
-                // Delete custom file
-                string filename;
-                cout << "Enter the filename to delete (e.g., mydata.dat): ";
-                cin >> filename;
                 
-                if (!locationManager->dataFileExists(filename)) {
-                    cout << "\nNo data file found at " << filename << endl;
-                    system("pause");
-                    break;
+                if (outputFile.is_open()) {
+                    outputFile.close();
                 }
                 
-                if (confirmAction("Are you sure you want to delete this file? This cannot be undone.")) {
-                    bool success = locationManager->deleteDataFile(filename);
-                    if (success) {
-                        cout << "\nData file deleted successfully" << endl;
-                    }
-                }
-                system("pause");
-                break;
+                // Check if route comparison and most cost-effective route data were loaded
+                bool routeComparisonLoaded = loadRouteComparisonData();
+                bool costEffectiveRouteLoaded = loadMostCostEffectiveRouteData();
+
+                UIHelper::displayProgressBar(100);
+                cout << endl;
+                UIHelper::displaySuccess("All data loaded successfully!");
+                cout << "- Core data loaded from: " << targetFilename << endl;
+                cout << "- Additional files extracted from bundle" << endl;
+            } else {
+                UIHelper::displayProgressBar(100);
+                cout << endl;
+                UIHelper::displaySuccess("Core data loaded successfully from " + targetFilename);
             }
-            case 3:
-                // Return to main menu
-                break;
-            default:
-                cout << "Invalid choice. Please try again." << endl;
-                system("pause");
-                break;
         }
     }
+    catch (const exception& e) {
+        UIHelper::displayError(e.what());
+    }
+    
+    system("pause");
+}
+
+// Update the deleteData function to handle bundles
+void deleteData() {
+    system("cls");
+    displayHeader();
+    
+    cout << "\nDelete ALL Data Options:" << endl;  // Updated title
+    cout << "1. Delete core data file only (" << locationManager->getLastSavedFilePath() << ")" << endl;
+    cout << "2. Delete ALL data files (core + bundle + manifest)" << endl;  // Clearer option
+    cout << "3. Delete a custom file" << endl;
+    cout << "4. Return to main menu" << endl;
+    cout << "\nEnter your choice: ";
+    
+    int choice;
+    cin >> choice;
+    
+    string targetFilename;
+    bool deleteAll = false;
+    
+    switch (choice) {
+        case 1: {
+            // Delete core file only
+            targetFilename = locationManager->getLastSavedFilePath();
+            deleteAll = false;
+            break;
+        }
+        case 2: {
+            // Delete all related files
+            targetFilename = locationManager->getLastSavedFilePath();
+            deleteAll = true;
+            break;
+        }
+        case 3: {
+            // Delete custom file
+            cout << "Enter the filename to delete: ";
+            cin >> targetFilename;
+            
+            cout << "Delete related bundle and manifest files too? (y/n): ";
+            char allChoice;
+            cin >> allChoice;
+            deleteAll = (allChoice == 'y' || allChoice == 'Y');
+            break;
+        }
+        case 4:
+            // Return to main menu
+            return;
+        default:
+            cout << "Invalid choice. Please try again." << endl;
+            system("pause");
+            return;
+    }
+    
+    try {
+        if (!locationManager->dataFileExists(targetFilename)) {
+            throw FileOperationException("find", targetFilename);
+        }
+        
+        if (confirmAction("Are you sure you want to delete these files? This cannot be undone.")) {
+            // Delete the core data file
+            bool coreDeleted = locationManager->deleteDataFile(targetFilename);
+            if (!coreDeleted) {
+                throw WasteManagementException("Failed to delete core data file");
+            }
+            
+            cout << "Core data file deleted: " << targetFilename << endl;
+            
+            // If requested, delete bundle and manifest files too
+            if (deleteAll) {
+                string bundleFilename = targetFilename + "_bundle.txt";
+                string manifestFilename = targetFilename + "_manifest.txt";
+                
+                // Try to delete bundle file
+                ifstream bundleCheck(bundleFilename);
+                if (bundleCheck) {
+                    bundleCheck.close();
+                    if (remove(bundleFilename.c_str()) != 0) {
+                        UIHelper::displayWarning("Could not delete bundle file: " + bundleFilename);
+                    } else {
+                        cout << "Bundle file deleted: " << bundleFilename << endl;
+                    }
+                }
+                
+                // Try to delete manifest file
+                ifstream manifestCheck(manifestFilename);
+                if (manifestCheck) {
+                    manifestCheck.close();
+                    if (remove(manifestFilename.c_str()) != 0) {
+                        UIHelper::displayWarning("Could not delete manifest file: " + manifestFilename);
+                    } else {
+                        cout << "Manifest file deleted: " << manifestFilename << endl;
+                    }
+                }
+                
+                // Delete additional files that were in the bundle
+                vector<string> additionalFiles = {
+                    "environmental_impact.txt",
+                    "external_factors_history.dat",
+                    "locations_info.txt",
+                    "qtable.txt",
+                    "route_info.txt",
+                    "collection_history.txt",
+                    "route_comparison.txt",          
+                    "most_cost_effective_route.txt"  
+                };
+                
+                cout << "\nDeleting additional files..." << endl;
+                for (const auto& file : additionalFiles) {
+                    ifstream fileCheck(file);
+                    if (fileCheck) {
+                        fileCheck.close();
+                        if (remove(file.c_str()) != 0) {
+                            UIHelper::displayWarning("Could not delete file: " + file);
+                        } else {
+                            cout << "File deleted: " << file << endl;
+                        }
+                    }
+                }
+            }
+            
+            UIHelper::displaySuccess("Data files deleted successfully");
+        }
+    }
+    catch (const exception& e) {
+        UIHelper::displayError(e.what());
+    }
+    
+    system("pause");
+}
 
     // Add this to the private section of WasteManagementSystem class
 private:
@@ -3142,6 +3506,22 @@ private:
                 cout << "(" << fixed << setprecision(2) << savingsPercent << "% reduction)" << endl;
             }
         }
+
+        // Save route comparison data to file automatically
+        saveRouteComparisonData();
+
+        // Add option to select the most cost-effective route and collect waste
+    cout << "\nOptions:" << endl;
+    cout << "1. Select the most cost-effective route" << endl;
+    cout << "2. Return to main menu" << endl;
+    cout << "Enter your choice: ";
+    
+    int choice;
+    cin >> choice;
+    
+    if (choice == 1) {
+        selectMostCostEffectiveRoute();
+    }
         
         cout << "\nPress any key to return to main menu...";
         _getch();
@@ -3586,6 +3966,473 @@ private:
         }
     }
 
+private:
+void selectMostCostEffectiveRoute() {
+    if (routeResults.size() < 2) {
+        UIHelper::displayWarning("You need to execute at least 2 different routes to find the most cost-effective one.");
+        return;
+    }
+    
+    // Find the cheapest route
+    string cheapestRoute = "";
+    double cheapestCost = DBL_MAX;
+    RouteResults bestRouteResults;
+    int cheapestRouteIndex = 0;
+    
+    cout << "\nFinding the most cost-effective route..." << endl;
+    
+    for (const auto& result : routeResults) {
+        double totalCost = result.second.totalFuel + result.second.totalWage;
+        if (totalCost < cheapestCost) {
+            cheapestCost = totalCost;
+            cheapestRoute = result.first;
+            bestRouteResults = result.second;
+            
+            // Determine the route index for setting the strategy
+            if (cheapestRoute == "Regular (Non-Optimized)") cheapestRouteIndex = 1;
+            else if (cheapestRoute == "Optimized") cheapestRouteIndex = 2;
+            else if (cheapestRoute == "Greedy") cheapestRouteIndex = 3;
+            else if (cheapestRoute == "Traveling Salesman Problem") cheapestRouteIndex = 4;
+            else if (cheapestRoute == "Minimum Spanning Tree") cheapestRouteIndex = 5;
+            else if (cheapestRoute == "Reinforcement Learning") cheapestRouteIndex = 6;
+            else if (cheapestRoute == "External Factors AI-based") cheapestRouteIndex = 7;
+        }
+    }
+    
+    // Switch to the most cost-effective route
+    switch (cheapestRouteIndex) {
+        case 1:
+            route.setStrategy(make_shared<NonOptimizedRoute>());
+            break;
+        case 2:
+            route.setStrategy(make_shared<OptimizedRoute>());
+            break;
+        case 3:
+            route.setStrategy(make_shared<GreedyRoute>());
+            break;
+        case 4:
+            route.setStrategy(make_shared<TSPRoute>());
+            break;
+        case 5:
+            route.setStrategy(make_shared<MSTRoute>());
+            break;
+        case 6:
+            route.setStrategy(make_shared<RLRoute>());
+            break;
+        case 7:
+            route.setStrategy(make_shared<ExternalFactorsRoute>());
+            break;
+        default:
+            UIHelper::displayError("Could not determine the most cost-effective route.");
+            return;
+    }
+    
+    // Update the current route
+    currentRoute = cheapestRouteIndex;
+    
+    UIHelper::displaySuccess("Selected the most cost-effective route: " + cheapestRoute);
+    
+    cout << "\nTotal cost: " << fixed << setprecision(2) << cheapestCost 
+         << " RM (Fuel: " << bestRouteResults.totalFuel 
+         << " RM, Wages: " << bestRouteResults.totalWage << " RM)" << endl;
+
+    // Save most cost-effective route data to file
+    saveMostCostEffectiveRouteData(cheapestRoute, bestRouteResults);
+    
+    // Ask if user wants to simulate waste collection using this route
+    cout << "\nDo you want to simulate waste collection using this route? (y/n): ";
+    char choice;
+    cin >> choice;
+    
+    if (choice == 'y' || choice == 'Y') {
+        simulateWasteCollection(bestRouteResults);
+    }
+}
+
+// Method to simulate waste collection by setting waste levels to 0 for visited locations
+void simulateWasteCollection(const RouteResults& results) {
+    if (results.path.empty()) {
+        UIHelper::displayWarning("No route to follow for waste collection.");
+        return;
+    }
+    
+    vector<WasteLocation>& locations = locationManager->getLocations();
+    
+    cout << "\nSimulating waste collection along the selected route..." << endl;
+    cout << "===========================================================" << endl;
+    cout << "Location                    | Before | After " << endl;
+    cout << "-----------------------------------------------------------" << endl;
+    
+    // Track how many locations were actually collected (excluding HQ and duplicate visits)
+    int locationsCollected = 0;
+    unordered_set<int> collectedLocations;
+    
+    // Skip the first element (HQ) and process all other locations in the path
+    for (size_t i = 1; i < results.path.size(); i++) {
+        int locationIndex = results.path[i];
+        
+        // Skip HQ (index 0) and already collected locations
+        if (locationIndex == 0 || collectedLocations.find(locationIndex) != collectedLocations.end()) {
+            continue;
+        }
+        
+        // Store the previous waste level for reporting
+        int previousWasteLevel = locations[locationIndex].getWasteLevel();
+        
+        // Only perform collection if the waste level is significant
+        if (previousWasteLevel >= 25) {  // Using 25% as the minimum threshold
+            // Record the collection with the amount collected (previous waste level)
+            locations[locationIndex].recordCollection(previousWasteLevel);
+            
+            // Set waste level to 0 (collected)
+            locations[locationIndex].setWasteLevel(0);
+            locations[locationIndex].setIsCollected(true);
+            
+            // Print the before/after waste levels
+            cout << left << setw(28) << locations[locationIndex].getName() 
+                 << "| " << setw(7) << previousWasteLevel << "% | 0%" << endl;
+            
+            locationsCollected++;
+            collectedLocations.insert(locationIndex);
+        }
+    }
+    
+    cout << "===========================================================" << endl;
+    cout << "Total locations visited: " << results.path.size() - 1 << endl;  // Exclude the return to HQ
+    cout << "Total locations collected: " << locationsCollected << endl;
+    
+    UIHelper::displaySuccess("Waste collection simulation completed successfully!");
+}
+
+    // Save route comparison data to file
+    void saveRouteComparisonData() {
+        ofstream outFile("route_comparison.txt");
+        
+        if (!outFile) {
+            UIHelper::displayError("Cannot open file: route_comparison.txt");
+            return;
+        }
+        
+        // Write header
+        outFile << "WASTE MANAGEMENT SYSTEM - ROUTE COMPARISON DATA" << endl;
+        outFile << "===============================================" << endl;
+        time_t now = time(nullptr);
+        outFile << "Generated: " << ctime(&now);
+        outFile << endl;
+        
+        // Write route comparison table
+        outFile << left << setw(30) << "Route Type" 
+             << setw(15) << "Distance (km)" 
+             << setw(15) << "Time (h)" 
+             << setw(15) << "Fuel (RM)" 
+             << setw(15) << "Wages (RM)" 
+             << setw(15) << "Total (RM)" << endl;
+        outFile << string(105, '-') << endl;
+        
+        for (const auto& route : routeResults) {
+            double totalCost = route.second.totalFuel + route.second.totalWage;
+            outFile << left << setw(30) << route.first
+                 << setw(15) << route.second.totalDistance
+                 << setw(15) << fixed << setprecision(2) << (route.second.totalTime / 60)
+                 << setw(15) << fixed << setprecision(2) << route.second.totalFuel
+                 << setw(15) << fixed << setprecision(2) << route.second.totalWage
+                 << setw(15) << fixed << setprecision(2) << totalCost << endl;
+        }
+        
+        // Find the cheapest route
+        string cheapestRoute = "";
+        double cheapestCost = DBL_MAX;
+        
+        for (const auto& route : routeResults) {
+            double totalCost = route.second.totalFuel + route.second.totalWage;
+            if (totalCost < cheapestCost) {
+                cheapestCost = totalCost;
+                cheapestRoute = route.first;
+            }
+        }
+        
+        // Write the cost savings analysis
+        outFile << endl << "COST SAVINGS ANALYSIS" << endl;
+        outFile << "=====================" << endl;
+        outFile << "Most cost-effective route: " << cheapestRoute << endl;
+        
+        for (const auto& route : routeResults) {
+            if (route.first != cheapestRoute) {
+                double routeCost = route.second.totalFuel + route.second.totalWage;
+                double savings = routeCost - cheapestCost;
+                double savingsPercent = (savings / routeCost) * 100;
+                
+                outFile << "Switching from " << route.first << " to " << cheapestRoute 
+                     << " saves " << fixed << setprecision(2) << savings 
+                     << " RM (" << savingsPercent << "% reduction)" << endl;
+            }
+        }
+        
+        outFile.close();
+        UIHelper::displaySuccess("Route comparison data saved to 'route_comparison.txt'");
+    }
+    
+    // Save most cost-effective route data
+    void saveMostCostEffectiveRouteData(const string& routeName, const RouteResults& results) {
+        ofstream outFile("most_cost_effective_route.txt");
+        
+        if (!outFile) {
+            UIHelper::displayError("Cannot open file: most_cost_effective_route.txt");
+            return;
+        }
+        
+        // Write header
+        outFile << "WASTE MANAGEMENT SYSTEM - MOST COST-EFFECTIVE ROUTE" << endl;
+        outFile << "==================================================" << endl;
+        time_t now = time(nullptr);
+        outFile << "Generated: " << ctime(&now);
+        outFile << endl;
+        
+        // Write most cost-effective route info
+        outFile << "Selected Route: " << routeName << endl;
+        outFile << "Total Distance: " << results.totalDistance << " km" << endl;
+        outFile << "Total Time: " << fixed << setprecision(2) << (results.totalTime / 60) << " hours" << endl;
+        outFile << "Total Fuel Cost: " << fixed << setprecision(2) << results.totalFuel << " RM" << endl;
+        outFile << "Total Wages: " << fixed << setprecision(2) << results.totalWage << " RM" << endl;
+        outFile << "Total Cost: " << fixed << setprecision(2) << (results.totalFuel + results.totalWage) << " RM" << endl;
+        
+        // Write route path
+        outFile << endl << "ROUTE PATH:" << endl;
+        outFile << "===========" << endl;
+        
+        vector<WasteLocation>& locations = locationManager->getLocations();
+        for (size_t i = 0; i < results.path.size(); i++) {
+            outFile << locations[results.path[i]].getName();
+            if (i < results.path.size() - 1) {
+                outFile << " -> ";
+            }
+        }
+        outFile << endl;
+        
+        outFile.close();
+        UIHelper::displaySuccess("Most cost-effective route data saved to 'most_cost_effective_route.txt'");
+    }
+
+bool loadRouteComparisonData() {    
+    ifstream inFile("route_comparison.txt");
+    
+    if (!inFile) {
+        UIHelper::displayWarning("Route comparison data file not found or cannot be opened");
+        return false;
+    }
+    
+    // Clear existing route results
+    routeResults.clear();
+    
+    // Skip header lines until we find the table
+    string line;
+    while (getline(inFile, line)) {
+        if (line.find("Route Type") != string::npos && 
+            line.find("Distance") != string::npos &&
+            line.find("Time") != string::npos) {
+            break;
+        }
+    }
+    
+    // Skip the separator line
+    getline(inFile, line);
+    
+    // Read the route data
+    while (getline(inFile, line) && !line.empty()) {
+        istringstream iss(line);
+        string routeName;
+        int distance;
+        double time, fuel, wage;
+        
+        // Parse the line - assuming fields are separated by whitespace
+        iss >> routeName;
+        
+        // If route name has spaces, read until we find the distance
+        string temp;
+        while (iss >> temp) {
+            if (isdigit(temp[0])) {
+                distance = stoi(temp);
+                break;
+            }
+            routeName += " " + temp;
+        }
+        
+        iss >> time >> fuel >> wage;
+        
+        // Create a new RouteResults object
+        RouteResults result;
+        result.totalDistance = distance;
+        result.totalTime = time * 60; // Convert hours back to minutes
+        result.totalFuel = fuel;
+        result.totalWage = wage;
+        
+        // Add to map
+        routeResults[routeName] = result;
+    }
+    
+    UIHelper::displaySuccess("Route comparison data loaded successfully!");
+    inFile.close();
+    return true;
+}
+    
+    // Load most cost-effective route data
+    bool loadMostCostEffectiveRouteData() {
+        ifstream inFile("most_cost_effective_route.txt");
+        
+        if (!inFile) {
+            UIHelper::displayWarning("Most cost-effective route data file not found or cannot be opened");
+            return false;
+        }
+        
+        UIHelper::displaySuccess("Most cost-effective route data found. This data can be accessed through the 'Select Most Cost-Effective Route' menu option.");
+        inFile.close();
+        return true;
+    }
+
+void displayCollectionHistory() {
+    system("cls");
+    displayHeader();
+    
+    const vector<WasteLocation>& locations = locationManager->getLocations();
+    
+    setTextColor(COLOR_BLUE);
+    cout << "\n=================================================================" << endl;
+    cout << "                     COLLECTION HISTORY                           " << endl;
+    cout << "=================================================================" << endl;
+    setTextColor(COLOR_WHITE);
+    
+    bool anyCollections = false;
+    
+    // First check if there are any collections
+    for (size_t i = 1; i < locations.size(); i++) {
+        if (!locations[i].getCollectionHistory().empty()) {
+            anyCollections = true;
+            break;
+        }
+    }
+    
+    if (!anyCollections) {
+        UIHelper::displayWarning("No collection history available. Try simulating waste collection first.");
+        cout << "\nPress any key to return to the main menu...";
+        _getch();
+        return;
+    }
+    
+    // Display collection history for each location
+    for (size_t i = 1; i < locations.size(); i++) {
+        const vector<pair<time_t, double>>& history = locations[i].getCollectionHistory();
+        
+        if (history.empty()) continue;
+        
+        setTextColor(COLOR_GREEN);
+        cout << "\n" << locations[i].getName() << ":" << endl;
+        cout << string(locations[i].getName().length() + 1, '-') << endl;
+        setTextColor(COLOR_WHITE);
+        
+        double totalCollected = 0;
+        cout << left
+             << setw(25) << "Date & Time"
+             << setw(20) << "Amount Collected"
+             << endl;
+        cout << string(45, '-') << endl;
+        
+        // Sort history in reverse chronological order (newest first)
+        vector<pair<time_t, double>> sortedHistory = history;
+        sort(sortedHistory.begin(), sortedHistory.end(), 
+             [](const pair<time_t, double>& a, const pair<time_t, double>& b) {
+                 return a.first > b.first;
+             });
+        
+        for (const auto& entry : sortedHistory) {
+            // Format the date and time
+            char buffer[30];
+            struct tm* timeinfo = localtime(&entry.first);
+            strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
+            
+            cout << left 
+                 << setw(25) << buffer
+                 << setw(20) << fixed << setprecision(2) << entry.second << "%" 
+                 << endl;
+                 
+            totalCollected += entry.second;
+        }
+        
+        cout << string(45, '-') << endl;
+        cout << "Total collections: " << history.size() << endl;
+        cout << "Total waste collected: " << fixed << setprecision(2) << totalCollected << "%" << endl;
+    }
+    
+    // Option to export collection history
+    cout << "\nOptions:" << endl;
+    cout << "1. Export Collection History to File" << endl;
+    cout << "2. Return to Main Menu" << endl;
+    cout << "Enter your choice: ";
+    
+    int choice;
+    cin >> choice;
+    
+    if (choice == 1) {
+        ofstream outFile("collection_history.txt");
+        if (!outFile) {
+            UIHelper::displayError("Cannot open file: collection_history.txt");
+        } else {
+            outFile << "WASTE COLLECTION HISTORY REPORT" << endl;
+            outFile << "============================" << endl;
+            time_t currentTime = time(nullptr);
+            outFile << "Generated on: " << ctime(&currentTime);
+            outFile << endl;
+            
+            for (size_t i = 1; i < locations.size(); i++) {
+                const vector<pair<time_t, double>>& history = locations[i].getCollectionHistory();
+                
+                if (history.empty()) continue;
+                
+                outFile << locations[i].getName() << ":" << endl;
+                outFile << string(locations[i].getName().length() + 1, '-') << endl;
+                
+                outFile << left
+                     << setw(25) << "Date & Time"
+                     << setw(20) << "Amount Collected"
+                     << endl;
+                outFile << string(45, '-') << endl;
+                
+                double totalCollected = 0;
+                
+                // Sort history in reverse chronological order
+                vector<pair<time_t, double>> sortedHistory = history;
+                sort(sortedHistory.begin(), sortedHistory.end(), 
+                     [](const pair<time_t, double>& a, const pair<time_t, double>& b) {
+                         return a.first > b.first;
+                     });
+                
+                for (const auto& entry : sortedHistory) {
+                    char buffer[30];
+                    struct tm* timeinfo = localtime(&entry.first);
+                    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
+                    
+                    outFile << left 
+                         << setw(25) << buffer
+                         << setw(20) << fixed << setprecision(2) << entry.second << "%" 
+                         << endl;
+                         
+                    totalCollected += entry.second;
+                }
+                
+                outFile << string(45, '-') << endl;
+                outFile << "Total collections: " << history.size() << endl;
+                outFile << "Total waste collected: " << fixed << setprecision(2) << totalCollected << "%" << endl;
+                outFile << endl;
+            }
+            
+            outFile.close();
+            UIHelper::displaySuccess("Collection history exported to 'collection_history.txt'");
+        }
+    }
+    
+    cout << "\nPress any key to return to the main menu...";
+    _getch();
+}
+
 public:
     WasteManagementSystem() : currentRoute(0) {
         locationManager = WasteLocationManager::getInstance();
@@ -3621,7 +4468,7 @@ public:
             
             if (cin.fail()) {
                 cin.clear();  // Clear the error flag
-                cin.ignore(10000, '\n');  // Discard invalid input
+                cin.ignore(10000, '\n');   // Discard invalid input
                 cout << "Invalid input. Please enter a number." << endl;
                 system("pause");
                 continue;
@@ -3756,40 +4603,71 @@ public:
                     compareRoutes();
                     break;
                     
-                case 8:
-                    // Waste Pattern Analytics Dashboard
+                    case 8:
+                    // Select most cost-effective route
+                    system("cls");
+                    displayHeader();
+                    selectMostCostEffectiveRoute();
+                    system("pause");
+                    break;
+                    
+                // And update the case numbers for the following options
+                case 9:  // Waste Pattern Analytics Dashboard
                     displayAnalyticsDashboard();
                     break;
                     
-                case 9:
-                    // Help
+                    case 10:
+                    // View Collection History (new option)
+                    displayCollectionHistory();
+                    break;
+                    
+                case 11:  // Help (moved from 10 to 11)
                     showHelp();
                     break;
                     
-                case 10:
-                    // Save all data
+                case 12:  // Save all data (moved from 11 to 12)
                     saveData();
                     break;
                     
-                case 11:
-                    // Load data
+                case 13:  // Load data (moved from 12 to 13)
                     loadData();
                     break;
                     
-                case 12:
-                    // Delete saved data
+                case 14:  // Delete saved data (moved from 13 to 14)
                     deleteData();
                     break;
-                    
+
                 case 0:
-                    // Exit with confirmation and save option
-                    if (confirmAction("Are you sure you want to exit?")) {
-                        // Ask if user wants to save data before exiting
-                        if (confirmAction("Do you want to save your data before exiting?")) {
-                            saveData();
+                    // Exit - with confirmation and save prompt 
+                    {
+                        system("cls");
+                        displayHeader();
+        
+                        if (!confirmAction("Are you sure you want to exit the system?")) {
+                             break; // User changed their mind, return to menu
                         }
+        
+                         // Check if data needs to be saved
+                         // This could be enhanced with a flag that tracks if data has changed since last save
+                         if (confirmAction("Would you like to save all data before exiting?")) {
+                         saveData(); // Call the existing saveData method
+                    
+                         }
+        
+                        // Display farewell message
+                        system("cls");
+                        displayHeader();
+                         setTextColor(COLOR_GREEN);
+                         cout << "\n\n";
+                         cout << "  Thank You for using the Waste Collection Management System!!!\n";
+                         cout << "                 Have a nice day :) !!\n\n";
+                         setTextColor(COLOR_WHITE);
+        
+                         cout << "Press any key to exit...";
+                        _getch();
+        
                         running = false;
-                    }
+                    }   
                     break;
                     
                 default:
@@ -3799,7 +4677,11 @@ public:
         }
     }
 };
-
+/**
+ * Main function that initializes the WasteManagementSystem and runs it.
+ * 
+ * @return 0 if the program runs successfully, otherwise 1.
+ */
 int main() {
     try {
         WasteManagementSystem system;
@@ -3811,3 +4693,4 @@ int main() {
     
     return 0;
 }
+
